@@ -3,10 +3,13 @@ venv/
 .venv/
 env/
 
-# Model weights & ONNX artifacts (too large for Git — use Git LFS or store separately)
-model/
-data/
-logs/
+# Model weights — only keep quantized ONNX (64MB) + tokenizer files for deployment
+# Large files that exceed GitHub's 100MB limit:
+model/best_model/model.safetensors
+model/onnx/model.onnx
+model/onnx/model_optimized.onnx
+# PyTorch training checkpoints
+model/checkpoint-*/
 
 # Python cache
 __pycache__/
