@@ -1,0 +1,24 @@
+# Core ML
+torch==2.6.0
+transformers==4.48.3
+datasets==3.3.2
+tokenizers==0.21.4
+accelerate==1.14.0
+
+# Metrics
+scikit-learn==1.9.0
+
+# ONNX export & optimization
+onnx==1.22.0
+onnxruntime==1.27.0
+optimum==2.1.0
+
+# Serving
+fastapi==0.139.0
+uvicorn[standard]==0.50.0
+pydantic==2.13.4
+
+# Testing
+pytest==9.1.1
+pytest-asyncio==1.4.0
+httpx==0.28.1
