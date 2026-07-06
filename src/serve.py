@@ -6,6 +6,7 @@ POST /predict — Takes text, returns label + confidence score.
 
 import os
 import sys
+from pathlib import Path
 import numpy as np
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
@@ -17,6 +18,8 @@ LABELS = {0: "non-toxic", 1: "toxic"}
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 
@@ -84,12 +87,24 @@ async def lifespan(app: FastAPI):
 
 
 # ── App setup ────────────────────────────────────────────────────────────────
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+
 app = FastAPI(
     title="Content Moderation API",
     description="Real-time toxicity detection using ONNX-optimized DistilBERT",
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.get("/", include_in_schema=False)
+async def serve_frontend():
+    """Serve the web UI."""
+    return FileResponse(FRONTEND_DIR / "index.html")
+
+
+# Mount static files (CSS, JS) on /static so API routes aren't shadowed
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
 
 
 def _softmax(logits):

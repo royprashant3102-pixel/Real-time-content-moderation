@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Content Moderation — Toxicity Checker</title>
+    <meta name="description" content="Paste any text and get an instant toxicity score. Built with DistilBERT, optimized with ONNX quantization for sub-50ms inference.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+<body>
+
+    <nav class="topbar">
+        <div class="topbar-inner">
+            <span class="topbar-logo">🛡️ moderator</span>
+            <a href="/docs" class="topbar-link" target="_blank">API Docs</a>
+        </div>
+    </nav>
+
+    <main>
+        <header class="hero">
+            <h1>Check if your text<br>crosses the line.</h1>
+            <p class="hero-sub">
+                Paste anything below — a comment, a message, a tweet — and we'll tell you
+                whether it reads as toxic. Runs on a fine-tuned DistilBERT model,
+                quantized to respond in under 50ms.
+            </p>
+        </header>
+
+        <section class="workspace" id="workspace">
+            <div class="input-area">
+                <label for="text-input" class="input-label">Your text</label>
+                <textarea
+                    id="text-input"
+                    placeholder="Type or paste something here…"
+                    rows="5"
+                    maxlength="5000"
+                    autofocus
+                ></textarea>
+                <div class="input-footer">
+                    <span class="char-count" id="char-count">0 / 5,000</span>
+                    <span class="hint">Ctrl + Enter to analyze</span>
+                </div>
+            </div>
+
+            <button id="analyze-btn" class="btn-analyze" type="button">
+                <span class="btn-text">Analyze</span>
+                <span class="btn-loading" aria-hidden="true">
+                    <span class="spinner"></span>
+                    Checking…
+                </span>
+            </button>
+
+            <!-- Results (hidden until first analysis) -->
+            <div class="results" id="results" aria-live="polite">
+
+                <div class="result-verdict" id="result-verdict">
+                    <div class="verdict-icon" id="verdict-icon"></div>
+                    <div class="verdict-body">
+                        <h2 class="verdict-label" id="verdict-label"></h2>
+                        <p class="verdict-score" id="verdict-score"></p>
+                    </div>
+                </div>
+
+                <div class="confidence-breakdown" id="confidence-breakdown">
+                    <h3 class="breakdown-title">Confidence breakdown</h3>
+
+                    <div class="bar-group">
+                        <div class="bar-label">
+                            <span>Non-toxic</span>
+                            <span class="bar-value" id="bar-value-safe">—</span>
+                        </div>
+                        <div class="bar-track">
+                            <div class="bar-fill bar-fill-safe" id="bar-fill-safe"></div>
+                        </div>
+                    </div>
+
+                    <div class="bar-group">
+                        <div class="bar-label">
+                            <span>Toxic</span>
+                            <span class="bar-value" id="bar-value-toxic">—</span>
+                        </div>
+                        <div class="bar-track">
+                            <div class="bar-fill bar-fill-toxic" id="bar-fill-toxic"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="result-meta" id="result-meta">
+                    <span id="latency-display"></span>
+                </div>
+            </div>
+
+            <!-- Error state -->
+            <div class="error-box" id="error-box" role="alert">
+                <p id="error-message"></p>
+            </div>
+        </section>
+
+        <section class="about">
+            <h2>How it works</h2>
+            <div class="about-grid">
+                <div class="about-step">
+                    <span class="step-num">01</span>
+                    <h3>Tokenize</h3>
+                    <p>Your text is split into subword tokens using the DistilBERT tokenizer — the same one used during training.</p>
+                </div>
+                <div class="about-step">
+                    <span class="step-num">02</span>
+                    <h3>Classify</h3>
+                    <p>Tokens run through a fine-tuned DistilBERT model (trained on Civil Comments) exported to ONNX and quantized to INT8.</p>
+                </div>
+                <div class="about-step">
+                    <span class="step-num">03</span>
+                    <h3>Score</h3>
+                    <p>Softmax probabilities give you a confidence score for each class. The higher score wins.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>
+            Built as a portfolio project.
+            Model: <code>distilbert-base-uncased</code> · Dataset: <code>google/civil_comments</code> ·
+            Inference: ONNX Runtime (INT8 quantized, ~13ms avg)
+        </p>
+    </footer>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
