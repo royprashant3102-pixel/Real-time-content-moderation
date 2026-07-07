@@ -4,132 +4,358 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Content Moderation — Toxicity Checker</title>
-    <meta name="description" content="Paste any text and get an instant toxicity score. Built with DistilBERT, optimized with ONNX quantization for sub-50ms inference.">
+    <meta name="description" content="Analyze text, files, and URLs for toxicity. Built with DistilBERT, optimized with ONNX quantization for sub-50ms inference.">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
     <link rel="stylesheet" href="/static/style.css">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
 </head>
 <body>
 
+    <!-- Ambient background blobs -->
+    <div class="ambient" aria-hidden="true">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
     <nav class="topbar">
         <div class="topbar-inner">
-            <span class="topbar-logo">🛡️ moderator</span>
-            <a href="/docs" class="topbar-link" target="_blank">API Docs</a>
+            <div class="topbar-left">
+                <span class="topbar-logo">
+                    <span class="logo-icon">🛡️</span>
+                    <span class="logo-text">moderator</span>
+                </span>
+                <span class="topbar-badge">v2.0</span>
+            </div>
+            <div class="topbar-right">
+                <span class="status-dot" id="status-dot"></span>
+                <span class="status-text" id="status-text">Checking…</span>
+                <a href="/docs" class="topbar-link" target="_blank">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    API Docs
+                </a>
+            </div>
         </div>
     </nav>
 
     <main>
         <header class="hero">
-            <h1>Check if your text<br>crosses the line.</h1>
+            <div class="hero-eyebrow">
+                <span class="eyebrow-dot"></span>
+                Real-time NLP · DistilBERT · ONNX Runtime
+            </div>
+            <h1>Does your text<br><span class="hero-highlight">cross the line</span>?</h1>
             <p class="hero-sub">
-                Paste anything below — a comment, a message, a tweet — and we'll tell you
-                whether it reads as toxic. Runs on a fine-tuned DistilBERT model,
-                quantized to respond in under 50ms.
+                Analyze text, uploaded files, or any URL for toxicity.
+                Our model reads it in <strong>under 50ms per chunk</strong>
+                and breaks down exactly where the problems are.
             </p>
         </header>
 
         <section class="workspace" id="workspace">
-            <div class="input-area">
-                <label for="text-input" class="input-label">Your text</label>
-                <textarea
-                    id="text-input"
-                    placeholder="Type or paste something here…"
-                    rows="5"
-                    maxlength="5000"
-                    autofocus
-                ></textarea>
-                <div class="input-footer">
-                    <span class="char-count" id="char-count">0 / 5,000</span>
-                    <span class="hint">Ctrl + Enter to analyze</span>
+            <!-- Tab bar -->
+            <div class="tab-bar" role="tablist">
+                <button class="tab is-active" role="tab" data-tab="text" id="tab-text" aria-selected="true">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    Text
+                </button>
+                <button class="tab" role="tab" data-tab="file" id="tab-file" aria-selected="false">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    File Upload
+                </button>
+                <button class="tab" role="tab" data-tab="url" id="tab-url" aria-selected="false">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    URL
+                </button>
+            </div>
+
+            <!-- ═══ TEXT TAB ═══ -->
+            <div class="tab-panel is-active" id="panel-text" role="tabpanel">
+                <div class="input-card">
+                    <div class="input-card-header">
+                        <label for="text-input" class="input-label">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                            Write or paste text
+                        </label>
+                        <span class="char-count" id="char-count">0<span class="char-sep">/</span>50,000</span>
+                    </div>
+
+                    <textarea
+                        id="text-input"
+                        placeholder="Paste anything — a comment, article, message, tweet. Up to ~10,000 words."
+                        rows="6"
+                        maxlength="50000"
+                        autofocus
+                    ></textarea>
+
+                    <div class="input-card-footer">
+                        <div class="example-chips" id="example-chips">
+                            <span class="chips-label">Try:</span>
+                            <button class="chip" data-text="You're an idiot and nobody cares about your opinion." type="button">Toxic example</button>
+                            <button class="chip" data-text="This is a really thoughtful analysis, thanks for sharing your perspective!" type="button">Clean example</button>
+                            <button class="chip" data-text="go back to where you came from, we don't want your kind here" type="button">Hate speech</button>
+                        </div>
+
+                        <div class="input-actions">
+                            <span class="kbd-hint"><kbd>⌘</kbd><kbd>↵</kbd></span>
+                            <button id="analyze-text-btn" class="btn-analyze" type="button">
+                                <span class="btn-text">
+                                    Analyze text
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                                </span>
+                                <span class="btn-loading" aria-hidden="true">
+                                    <span class="spinner"></span>
+                                    Analyzing…
+                                </span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <button id="analyze-btn" class="btn-analyze" type="button">
-                <span class="btn-text">Analyze</span>
-                <span class="btn-loading" aria-hidden="true">
-                    <span class="spinner"></span>
-                    Checking…
-                </span>
-            </button>
-
-            <!-- Results (hidden until first analysis) -->
-            <div class="results" id="results" aria-live="polite">
-
-                <div class="result-verdict" id="result-verdict">
-                    <div class="verdict-icon" id="verdict-icon"></div>
-                    <div class="verdict-body">
-                        <h2 class="verdict-label" id="verdict-label"></h2>
-                        <p class="verdict-score" id="verdict-score"></p>
-                    </div>
-                </div>
-
-                <div class="confidence-breakdown" id="confidence-breakdown">
-                    <h3 class="breakdown-title">Confidence breakdown</h3>
-
-                    <div class="bar-group">
-                        <div class="bar-label">
-                            <span>Non-toxic</span>
-                            <span class="bar-value" id="bar-value-safe">—</span>
-                        </div>
-                        <div class="bar-track">
-                            <div class="bar-fill bar-fill-safe" id="bar-fill-safe"></div>
+            <!-- ═══ FILE TAB ═══ -->
+            <div class="tab-panel" id="panel-file" role="tabpanel">
+                <div class="input-card">
+                    <div class="drop-zone" id="drop-zone">
+                        <input type="file" id="file-input" accept=".txt,.pdf,.docx,.csv,.md,.json" hidden>
+                        <div class="drop-zone-content">
+                            <div class="drop-icon">
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            </div>
+                            <p class="drop-text">Drag & drop a file here, or <button type="button" class="drop-browse" id="browse-btn">browse</button></p>
+                            <div class="drop-meta">
+                                <span class="file-types">TXT · PDF · DOCX · CSV · MD · JSON</span>
+                                <span class="file-limit">Max 5 MB</span>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="bar-group">
-                        <div class="bar-label">
-                            <span>Toxic</span>
-                            <span class="bar-value" id="bar-value-toxic">—</span>
+                    <!-- File selected state -->
+                    <div class="file-selected" id="file-selected" style="display:none;">
+                        <div class="file-info">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                            <div class="file-details">
+                                <span class="file-name" id="file-name">—</span>
+                                <span class="file-size" id="file-size">—</span>
+                            </div>
+                            <button class="file-remove" id="file-remove-btn" type="button">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
                         </div>
-                        <div class="bar-track">
-                            <div class="bar-fill bar-fill-toxic" id="bar-fill-toxic"></div>
-                        </div>
+                        <button id="analyze-file-btn" class="btn-analyze" type="button">
+                            <span class="btn-text">
+                                Analyze file
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                            </span>
+                            <span class="btn-loading" aria-hidden="true">
+                                <span class="spinner"></span>
+                                Analyzing…
+                            </span>
+                        </button>
                     </div>
-                </div>
-
-                <div class="result-meta" id="result-meta">
-                    <span id="latency-display"></span>
                 </div>
             </div>
 
-            <!-- Error state -->
+            <!-- ═══ URL TAB ═══ -->
+            <div class="tab-panel" id="panel-url" role="tabpanel">
+                <div class="input-card">
+                    <div class="url-input-wrap">
+                        <div class="url-prefix">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                        </div>
+                        <input type="url" id="url-input" class="url-field" placeholder="https://example.com/article" autocomplete="off">
+                    </div>
+                    <p class="url-hint">We'll fetch the page, extract visible text, and analyze it chunk by chunk.</p>
+                    <div class="input-actions" style="margin-top: 0.75rem;">
+                        <button id="analyze-url-btn" class="btn-analyze" type="button">
+                            <span class="btn-text">
+                                Analyze URL
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                            </span>
+                            <span class="btn-loading" aria-hidden="true">
+                                <span class="spinner"></span>
+                                Fetching & analyzing…
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ RESULTS ═══ -->
+            <!-- Single result (for short text) -->
+            <div class="results" id="results-single" aria-live="polite">
+                <div class="result-card" id="result-card-single">
+                    <div class="gauge-section">
+                        <div class="gauge" id="gauge-single">
+                            <svg class="gauge-svg" viewBox="0 0 200 120">
+                                <path class="gauge-bg" d="M20,100 A80,80 0 0,1 180,100" />
+                                <path class="gauge-fill" id="gauge-fill-single" d="M20,100 A80,80 0 0,1 180,100" />
+                            </svg>
+                            <div class="gauge-value" id="gauge-value-single">0%</div>
+                            <div class="gauge-label">toxicity score</div>
+                        </div>
+                    </div>
+                    <div class="verdict-section">
+                        <div class="verdict-badge" id="verdict-badge-single">
+                            <span class="verdict-icon" id="verdict-icon-single"></span>
+                            <span class="verdict-text" id="verdict-text-single"></span>
+                        </div>
+                        <p class="verdict-detail" id="verdict-detail-single"></p>
+                    </div>
+                    <div class="breakdown-section">
+                        <div class="breakdown-row">
+                            <div class="breakdown-item">
+                                <span class="breakdown-dot breakdown-dot-safe"></span>
+                                <span class="breakdown-label">Non-toxic</span>
+                                <span class="breakdown-value" id="val-safe-single">—</span>
+                            </div>
+                            <div class="breakdown-divider"></div>
+                            <div class="breakdown-item">
+                                <span class="breakdown-dot breakdown-dot-toxic"></span>
+                                <span class="breakdown-label">Toxic</span>
+                                <span class="breakdown-value" id="val-toxic-single">—</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="result-meta">
+                        <span class="meta-item" id="latency-single">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        </span>
+                        <span class="meta-item">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            ONNX INT8 Quantized
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bulk result (for files, URLs, long text) -->
+            <div class="results" id="results-bulk" aria-live="polite">
+                <div class="result-card" id="result-card-bulk">
+                    <!-- Summary row -->
+                    <div class="bulk-summary">
+                        <div class="gauge-section">
+                            <div class="gauge" id="gauge-bulk">
+                                <svg class="gauge-svg" viewBox="0 0 200 120">
+                                    <path class="gauge-bg" d="M20,100 A80,80 0 0,1 180,100" />
+                                    <path class="gauge-fill" id="gauge-fill-bulk" d="M20,100 A80,80 0 0,1 180,100" />
+                                </svg>
+                                <div class="gauge-value" id="gauge-value-bulk">0%</div>
+                                <div class="gauge-label">peak toxicity</div>
+                            </div>
+                        </div>
+
+                        <div class="verdict-section">
+                            <div class="verdict-badge" id="verdict-badge-bulk">
+                                <span class="verdict-icon" id="verdict-icon-bulk"></span>
+                                <span class="verdict-text" id="verdict-text-bulk"></span>
+                            </div>
+                            <p class="verdict-detail" id="verdict-detail-bulk"></p>
+                        </div>
+
+                        <div class="bulk-stats">
+                            <div class="bulk-stat">
+                                <span class="bulk-stat-value" id="bulk-source">—</span>
+                                <span class="bulk-stat-label">Source</span>
+                            </div>
+                            <div class="bulk-stat">
+                                <span class="bulk-stat-value" id="bulk-chunks">—</span>
+                                <span class="bulk-stat-label">Chunks analyzed</span>
+                            </div>
+                            <div class="bulk-stat">
+                                <span class="bulk-stat-value" id="bulk-toxic-count">—</span>
+                                <span class="bulk-stat-label">Toxic chunks</span>
+                            </div>
+                            <div class="bulk-stat">
+                                <span class="bulk-stat-value" id="bulk-time">—</span>
+                                <span class="bulk-stat-label">Processing time</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chunk breakdown -->
+                    <div class="chunk-breakdown" id="chunk-breakdown">
+                        <button class="chunk-toggle" id="chunk-toggle" type="button">
+                            <span>Show chunk-by-chunk breakdown</span>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                        <div class="chunk-list" id="chunk-list" style="display:none;">
+                            <!-- Filled by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error -->
             <div class="error-box" id="error-box" role="alert">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                 <p id="error-message"></p>
             </div>
         </section>
 
-        <section class="about">
-            <h2>How it works</h2>
-            <div class="about-grid">
-                <div class="about-step">
-                    <span class="step-num">01</span>
-                    <h3>Tokenize</h3>
-                    <p>Your text is split into subword tokens using the DistilBERT tokenizer — the same one used during training.</p>
+        <section class="pipeline">
+            <div class="pipeline-header">
+                <h2>Under the hood</h2>
+                <p class="pipeline-sub">Three steps, one model, sub-50ms per chunk.</p>
+            </div>
+            <div class="pipeline-steps">
+                <div class="step-card">
+                    <div class="step-icon-wrap">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                    </div>
+                    <div class="step-content">
+                        <span class="step-num">01</span>
+                        <h3>Tokenize</h3>
+                        <p>Text splits into subword tokens via the DistilBERT tokenizer. Large content is chunked into overlapping segments.</p>
+                    </div>
                 </div>
-                <div class="about-step">
-                    <span class="step-num">02</span>
-                    <h3>Classify</h3>
-                    <p>Tokens run through a fine-tuned DistilBERT model (trained on Civil Comments) exported to ONNX and quantized to INT8.</p>
+                <div class="step-connector"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 18 15 12 9 6"/></svg></div>
+                <div class="step-card">
+                    <div class="step-icon-wrap">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    </div>
+                    <div class="step-content">
+                        <span class="step-num">02</span>
+                        <h3>Classify</h3>
+                        <p>Each chunk flows through a 6-layer transformer, fine-tuned on Civil Comments, exported to ONNX, quantized to INT8.</p>
+                    </div>
                 </div>
-                <div class="about-step">
-                    <span class="step-num">03</span>
-                    <h3>Score</h3>
-                    <p>Softmax probabilities give you a confidence score for each class. The higher score wins.</p>
+                <div class="step-connector"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 18 15 12 9 6"/></svg></div>
+                <div class="step-card">
+                    <div class="step-icon-wrap">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    </div>
+                    <div class="step-content">
+                        <span class="step-num">03</span>
+                        <h3>Score</h3>
+                        <p>Softmax normalizes logits into probabilities per chunk. The worst chunk determines the overall verdict.</p>
+                    </div>
                 </div>
             </div>
+        </section>
+
+        <section class="stats">
+            <div class="stat"><span class="stat-value">95.3%</span><span class="stat-label">Accuracy</span></div>
+            <div class="stat-divider"></div>
+            <div class="stat"><span class="stat-value">&lt;13ms</span><span class="stat-label">Avg latency</span></div>
+            <div class="stat-divider"></div>
+            <div class="stat"><span class="stat-value">64MB</span><span class="stat-label">Model size</span></div>
+            <div class="stat-divider"></div>
+            <div class="stat"><span class="stat-value">74.9%</span><span class="stat-label">Size reduction</span></div>
         </section>
     </main>
 
     <footer class="footer">
-        <p>
-            Built as a portfolio project.
-            Model: <code>distilbert-base-uncased</code> · Dataset: <code>google/civil_comments</code> ·
-            Inference: ONNX Runtime (INT8 quantized, ~13ms avg)
-        </p>
+        <div class="footer-inner">
+            <p class="footer-left">Built by <strong>Prashant Roy</strong> — a portfolio project, not a product.</p>
+            <p class="footer-right">
+                <code>distilbert-base-uncased</code> · <code>google/civil_comments</code> · ONNX Runtime
+            </p>
+        </div>
     </footer>
 
     <script src="/static/script.js"></script>
