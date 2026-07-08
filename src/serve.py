@@ -26,10 +26,13 @@ MAX_TEXT_LENGTH = 50_000          # ~10,000 words
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 CHUNK_SIZE = 400                  # chars per chunk (~100 tokens)
 CHUNK_OVERLAP = 50                # overlap between chunks
-ONNX_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model", "onnx"))
-MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model", "best_model"))
+# Paths work both locally and inside Docker container
+_BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+ONNX_DIR = os.environ.get("ONNX_DIR", os.path.join(_BASE, "model", "onnx"))
+MODEL_PATH = os.environ.get("MODEL_PATH", os.path.join(_BASE, "model", "best_model"))
 LABELS = {0: "non-toxic", 1: "toxic"}
 ALLOWED_EXTENSIONS = {".txt", ".pdf", ".docx", ".csv", ".md", ".json"}
+PORT = int(os.environ.get("PORT", 7860))  # 7860 for HF Spaces, 8000 locally
 # ─────────────────────────────────────────────────────────────────────────────
 
 from contextlib import asynccontextmanager
@@ -490,4 +493,4 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=PORT)

@@ -1,0 +1,24 @@
+# Serving only — no torch, no training deps
+# Much slimmer than requirements.txt for fast Docker builds
+
+# ONNX inference
+onnxruntime==1.27.0
+
+# Tokenizer (no PyTorch needed for tokenizer-only use)
+transformers==4.48.3
+tokenizers==0.21.4
+
+# FastAPI serving
+fastapi==0.139.0
+uvicorn[standard]==0.50.0
+pydantic==2.13.4
+python-multipart==0.0.32
+
+# File & URL processing
+beautifulsoup4==4.15.0
+PyPDF2==3.0.1
+python-docx==1.2.0
+httpx==0.28.1
+
+# Numpy (needed for ONNX output processing)
+numpy
