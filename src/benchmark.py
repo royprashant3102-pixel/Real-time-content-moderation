@@ -12,7 +12,7 @@ import numpy as np
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 NUM_SAMPLES = 100
-MAX_SEQ_LENGTH = 128
+MAX_SEQ_LENGTH = 64               # ⚡ Matches serve.py optimization
 MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model", "best_model"))
 ONNX_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model", "onnx"))
 WARMUP_RUNS = 10
@@ -148,6 +148,15 @@ def benchmark():
 
     session = ort.InferenceSession(
         onnx_path,
+        # ⚡ OPTIMIZATION: ONNX session tuning for max CPU performance
+        sess_options=(
+            lambda o: (
+                setattr(o, "intra_op_num_threads", 4),
+                setattr(o, "inter_op_num_threads", 2),
+                setattr(o, "graph_optimization_level", ort.GraphOptimizationLevel.ORT_ENABLE_ALL),
+                o
+            )[-1]
+        )(ort.SessionOptions()),
         providers=["CPUExecutionProvider"],
     )
     print(f"✅ ONNX model loaded: {os.path.basename(onnx_path)}")
