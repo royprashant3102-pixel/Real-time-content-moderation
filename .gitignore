@@ -10,6 +10,8 @@ model/onnx/model.onnx
 model/onnx/model_optimized.onnx
 # PyTorch training checkpoints
 model/checkpoint-*/
+model/*.pth
+model/*.pt
 
 # Python cache
 __pycache__/

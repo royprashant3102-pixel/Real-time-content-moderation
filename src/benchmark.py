@@ -10,11 +10,14 @@ import sys
 import time
 import numpy as np
 
+sys.path.insert(0, os.path.dirname(__file__))
+
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 NUM_SAMPLES = 100
 MAX_SEQ_LENGTH = 64               # ⚡ Matches serve.py optimization
-MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model", "best_model"))
+MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model", "best_custom_model.pth"))
 ONNX_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model", "onnx"))
+TOKENIZER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "tokenizer"))
 WARMUP_RUNS = 10
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -54,16 +57,15 @@ def benchmark_pytorch(model, inputs_list):
     # Warmup
     with torch.no_grad():
         for i in range(min(WARMUP_RUNS, len(inputs_list))):
-            inp = {k: v.to(device) for k, v in inputs_list[i].items()}
-            _ = model(**inp)
+            inp = inputs_list[i]
+            _ = model(inp["input_ids"], inp["attention_mask"])
 
     # Benchmark
     latencies = []
     with torch.no_grad():
         for inputs in inputs_list:
-            inp = {k: v.to(device) for k, v in inputs.items()}
             start = time.perf_counter()
-            _ = model(**inp)
+            _ = model(inputs["input_ids"], inputs["attention_mask"])
             end = time.perf_counter()
             latencies.append((end - start) * 1000)  # ms
 
@@ -113,7 +115,8 @@ def print_results(name, latencies):
 def benchmark():
     """Run full benchmark: PyTorch vs ONNX."""
     import torch
-    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+    from custom_model import CustomBiLSTMClassifier
+    from transformers import AutoTokenizer
     import onnxruntime as ort
 
     # ── Load models ──────────────────────────────────────────────────────────
@@ -121,13 +124,14 @@ def benchmark():
 
     if not os.path.exists(MODEL_PATH):
         raise FileNotFoundError(
-            f"PyTorch model not found at {MODEL_PATH}. Run train.py first."
+            f"PyTorch model weights not found at {MODEL_PATH}. Run custom_train.py first."
         )
 
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-    pytorch_model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
+    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_DIR)
+    pytorch_model = CustomBiLSTMClassifier(vocab_size=tokenizer.vocab_size)
+    pytorch_model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
     pytorch_model.eval()
-    print(f"✅ PyTorch model loaded")
+    print(f"✅ PyTorch custom model loaded")
 
     # Find best ONNX model (prefer quantized > optimized > raw)
     onnx_candidates = [

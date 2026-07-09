@@ -14,14 +14,16 @@ import numpy as np
 # For pytest-asyncio >= 0.21: auto mode makes all async test functions
 # automatically treated as async tests without needing @pytest.mark.asyncio
 pytest_plugins = ("pytest_asyncio",)
+import torch
 
 # Ensure src is importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # Paths
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-MODEL_PATH = os.path.join(PROJECT_ROOT, "model", "best_model")
+MODEL_PATH = os.path.join(PROJECT_ROOT, "model", "best_custom_model.pth")
 ONNX_DIR = os.path.join(PROJECT_ROOT, "model", "onnx")
+TOKENIZER_DIR = os.path.join(PROJECT_ROOT, "data", "tokenizer")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -82,22 +84,27 @@ class TestModel:
     @pytest.fixture(autouse=True)
     def check_model_exists(self):
         if not os.path.exists(MODEL_PATH):
-            pytest.skip("Model not found. Run train.py first.")
+            pytest.skip("Custom model weights not found. Run custom_train.py first.")
 
     def test_model_loads(self):
-        from transformers import AutoModelForSequenceClassification, AutoTokenizer
-        model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+        from custom_model import CustomBiLSTMClassifier
+        from transformers import AutoTokenizer
+        
+        tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_DIR)
+        model = CustomBiLSTMClassifier(vocab_size=tokenizer.vocab_size)
+        model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
+        
         assert model is not None
-        assert tokenizer is not None
-        assert model.config.num_labels == 2
+        assert model.embedding.num_embeddings == tokenizer.vocab_size
 
     def test_model_predicts_shape(self):
         import torch
-        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+        from custom_model import CustomBiLSTMClassifier
+        from transformers import AutoTokenizer
 
-        model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+        tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_DIR)
+        model = CustomBiLSTMClassifier(vocab_size=tokenizer.vocab_size)
+        model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
         model.eval()
 
         inputs = tokenizer(
@@ -105,12 +112,12 @@ class TestModel:
             return_tensors="pt",
             padding="max_length",
             truncation=True,
-            max_length=128,
+            max_length=64,
         )
         with torch.no_grad():
-            outputs = model(**inputs)
+            outputs = model(inputs["input_ids"], inputs["attention_mask"])
 
-        assert outputs.logits.shape == (1, 2)
+        assert outputs.shape == (1, 2)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -173,26 +180,28 @@ class TestONNX:
         """Raw ONNX logits must be close to PyTorch logits."""
         import torch
         import onnxruntime as ort
-        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+        from custom_model import CustomBiLSTMClassifier
+        from transformers import AutoTokenizer
 
         if not os.path.exists(MODEL_PATH):
-            pytest.skip("PyTorch model not found")
+            pytest.skip("PyTorch custom model not found")
 
         raw_onnx = os.path.join(ONNX_DIR, "model.onnx")
         if not os.path.exists(raw_onnx):
             pytest.skip("Raw (non-quantized) ONNX model not found")
 
-        model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
+        tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_DIR)
+        model = CustomBiLSTMClassifier(vocab_size=tokenizer.vocab_size)
+        model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
         model.eval()
-        tokenizer = AutoTokenizer.from_pretrained(self._get_tokenizer_path())
 
         text = "A neutral sentence for comparison testing."
         inputs = tokenizer(
             text, return_tensors="pt", padding="max_length",
-            truncation=True, max_length=128
+            truncation=True, max_length=64
         )
         with torch.no_grad():
-            pt_logits = model(**inputs).logits.numpy()
+            pt_logits = model(inputs["input_ids"], inputs["attention_mask"]).numpy()
 
         session = ort.InferenceSession(raw_onnx, providers=["CPUExecutionProvider"])
         feed = {
