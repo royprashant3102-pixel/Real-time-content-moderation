@@ -296,3 +296,68 @@ class TestAPI:
         ) as client:
             response = await client.post("/predict", json={"text": ""})
         assert response.status_code == 422  # Pydantic validation error
+
+    async def test_predict_bulk_endpoint(self):
+        from httpx import AsyncClient, ASGITransport
+        from serve import app
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=True),
+            base_url="http://test",
+        ) as client:
+            async with app.router.lifespan_context(app):
+                response = await client.post(
+                    "/predict/bulk",
+                    json={"text": "This is sample line one. " * 30 + "You are so stupid and awful. " + "This is sample line two. " * 30}
+                )
+        assert response.status_code == 200
+        data = response.json()
+        assert "total_chunks" in data
+        assert data["total_chunks"] > 1
+        assert "chunks" in data
+        assert "overall_label" in data
+        assert data["overall_toxic"] is True
+
+    async def test_predict_file_endpoint(self):
+        from httpx import AsyncClient, ASGITransport
+        from serve import app
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=True),
+            base_url="http://test",
+        ) as client:
+            async with app.router.lifespan_context(app):
+                files = {"file": ("test.txt", b"great article, very informative and well written", "text/plain")}
+                response = await client.post("/predict/file", files=files)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["source"] == "file"
+        assert data["source_name"] == "test.txt"
+        assert data["overall_toxic"] is False
+
+    async def test_predict_url_endpoint(self):
+        from unittest.mock import patch, MagicMock
+        from httpx import AsyncClient, ASGITransport, Response
+        from serve import app
+        
+        # Mock response from httpx
+        mock_response = MagicMock(spec=Response)
+        mock_response.status_code = 200
+        mock_response.text = "<html><body><h1>Hello World</h1><p>great article, very informative and well written</p></body></html>"
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("httpx.AsyncClient.get", return_value=mock_response):
+            async with AsyncClient(
+                transport=ASGITransport(app=app, raise_app_exceptions=True),
+                base_url="http://test",
+            ) as client:
+                async with app.router.lifespan_context(app):
+                    response = await client.post(
+                        "/predict/url",
+                        json={"url": "https://example.com/nice-page"}
+                    )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["source"] == "url"
+        assert data["source_name"] == "https://example.com/nice-page"
+        assert data["overall_toxic"] is False
+
+
