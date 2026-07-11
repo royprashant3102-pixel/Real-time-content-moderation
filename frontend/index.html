@@ -71,6 +71,10 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                     URL
                 </button>
+                <button class="tab" role="tab" data-tab="compare" id="tab-compare" aria-selected="false">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l6 6"/></svg>
+                    Compare Models
+                </button>
             </div>
 
             <!-- ═══ TEXT TAB ═══ -->
@@ -185,6 +189,47 @@
                 </div>
             </div>
 
+            <!-- ═══ COMPARE TAB ═══ -->
+            <div class="tab-panel" id="panel-compare" role="tabpanel">
+                <div class="input-card">
+                    <div class="input-card-header">
+                        <label for="compare-input" class="input-label">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/></svg>
+                            Compare Custom BiLSTM vs Base DistilBERT
+                        </label>
+                        <span class="char-count" id="compare-char-count">0<span class="char-sep">/</span>50,000</span>
+                    </div>
+
+                    <textarea
+                        id="compare-input"
+                        placeholder="Paste anything to run through both models. Compare latencies and predictions side-by-side."
+                        rows="6"
+                        maxlength="50000"
+                    ></textarea>
+
+                    <div class="input-card-footer">
+                        <div class="example-chips" id="compare-example-chips">
+                            <span class="chips-label">Try:</span>
+                            <button class="chip" data-text="You're an idiot and nobody cares about your opinion." type="button">Toxic example</button>
+                            <button class="chip" data-text="This is a really thoughtful analysis, thanks for sharing your perspective!" type="button">Clean example</button>
+                        </div>
+
+                        <div class="input-actions">
+                            <button id="analyze-compare-btn" class="btn-analyze" type="button">
+                                <span class="btn-text">
+                                    Compare models
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                                </span>
+                                <span class="btn-loading" aria-hidden="true">
+                                    <span class="spinner"></span>
+                                    Comparing…
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- ═══ RESULTS ═══ -->
             <!-- Single result (for short text) -->
             <div class="results" id="results-single" aria-live="polite">
@@ -285,6 +330,111 @@
                         </button>
                         <div class="chunk-list" id="chunk-list" style="display:none;">
                             <!-- Filled by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Compare result (side-by-side models) -->
+            <div class="results" id="results-compare" aria-live="polite">
+                <div class="compare-container" style="display: flex; gap: 1.5rem; flex-wrap: wrap; margin-top: 1rem; width: 100%;">
+                    <!-- Custom Model Card -->
+                    <div class="result-card" id="result-card-compare-custom" style="flex: 1; min-width: 300px; margin: 0;">
+                        <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--fg-muted); display: flex; align-items: center; gap: 0.5rem;">
+                            <span style="font-size: 1.3rem;">⚡</span> Custom Model (BiLSTM)
+                        </h3>
+                        <hr style="border: 0; height: 1px; background: rgba(255,255,255,0.08); margin: 0.75rem 0 1.25rem 0;">
+                        <div class="gauge-section">
+                            <div class="gauge" id="gauge-compare-custom">
+                                <svg class="gauge-svg" viewBox="0 0 200 120">
+                                    <path class="gauge-bg" d="M20,100 A80,80 0 0,1 180,100" />
+                                    <path class="gauge-fill" id="gauge-fill-compare-custom" d="M20,100 A80,80 0 0,1 180,100" />
+                                </svg>
+                                <div class="gauge-value" id="gauge-value-compare-custom">0%</div>
+                                <div class="gauge-label">toxicity score</div>
+                            </div>
+                        </div>
+                        <div class="verdict-section" style="margin-top: 1rem;">
+                            <div class="verdict-badge" id="verdict-badge-compare-custom">
+                                <span class="verdict-icon" id="verdict-icon-compare-custom"></span>
+                                <span class="verdict-text" id="verdict-text-compare-custom"></span>
+                            </div>
+                            <p class="verdict-detail" id="verdict-detail-compare-custom" style="font-size: 0.85rem;"></p>
+                        </div>
+                        <div class="breakdown-section" style="margin-top: 1rem; padding-top: 1rem;">
+                            <div class="breakdown-row">
+                                <div class="breakdown-item">
+                                    <span class="breakdown-dot breakdown-dot-safe"></span>
+                                    <span class="breakdown-label">Non-toxic</span>
+                                    <span class="breakdown-value" id="val-safe-compare-custom">—</span>
+                                </div>
+                                <div class="breakdown-divider"></div>
+                                <div class="breakdown-item">
+                                    <span class="breakdown-dot breakdown-dot-toxic"></span>
+                                    <span class="breakdown-label">Toxic</span>
+                                    <span class="breakdown-value" id="val-toxic-compare-custom">—</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="result-meta" style="margin-top: 1.25rem;">
+                            <span class="meta-item" id="latency-compare-custom">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                —
+                            </span>
+                            <span class="meta-item">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                4.6MB ONNX INT8
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Base Model Card -->
+                    <div class="result-card" id="result-card-compare-base" style="flex: 1; min-width: 300px; margin: 0;">
+                        <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--fg-muted); display: flex; align-items: center; gap: 0.5rem;">
+                            <span style="font-size: 1.3rem;">🧠</span> Base Model (DistilBERT)
+                        </h3>
+                        <hr style="border: 0; height: 1px; background: rgba(255,255,255,0.08); margin: 0.75rem 0 1.25rem 0;">
+                        <div class="gauge-section">
+                            <div class="gauge" id="gauge-compare-base">
+                                <svg class="gauge-svg" viewBox="0 0 200 120">
+                                    <path class="gauge-bg" d="M20,100 A80,80 0 0,1 180,100" />
+                                    <path class="gauge-fill" id="gauge-fill-compare-base" d="M20,100 A80,80 0 0,1 180,100" />
+                                </svg>
+                                <div class="gauge-value" id="gauge-value-compare-base">0%</div>
+                                <div class="gauge-label">toxicity score</div>
+                            </div>
+                        </div>
+                        <div class="verdict-section" style="margin-top: 1rem;">
+                            <div class="verdict-badge" id="verdict-badge-compare-base">
+                                <span class="verdict-icon" id="verdict-icon-compare-base"></span>
+                                <span class="verdict-text" id="verdict-text-compare-base"></span>
+                            </div>
+                            <p class="verdict-detail" id="verdict-detail-compare-base" style="font-size: 0.85rem;"></p>
+                        </div>
+                        <div class="breakdown-section" style="margin-top: 1rem; padding-top: 1rem;">
+                            <div class="breakdown-row">
+                                <div class="breakdown-item">
+                                    <span class="breakdown-dot breakdown-dot-safe"></span>
+                                    <span class="breakdown-label">Non-toxic</span>
+                                    <span class="breakdown-value" id="val-safe-compare-base">—</span>
+                                </div>
+                                <div class="breakdown-divider"></div>
+                                <div class="breakdown-item">
+                                    <span class="breakdown-dot breakdown-dot-toxic"></span>
+                                    <span class="breakdown-label">Toxic</span>
+                                    <span class="breakdown-value" id="val-toxic-compare-base">—</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="result-meta" style="margin-top: 1.25rem;">
+                            <span class="meta-item" id="latency-compare-base">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                —
+                            </span>
+                            <span class="meta-item">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                268MB PyTorch Full
+                            </span>
                         </div>
                     </div>
                 </div>

@@ -81,9 +81,25 @@ class BulkPredictionResponse(BaseModel):
     processing_time_ms: int
 
 
+class ModelPredictionResult(BaseModel):
+    label: str
+    score: float
+    toxic: bool
+    confidence: dict
+    latency_ms: float
+
+
+class ComparePredictionResponse(BaseModel):
+    text: str
+    custom_model: ModelPredictionResult
+    base_model: ModelPredictionResult
+
+
 # ── Global model objects ─────────────────────────────────────────────────────
 _session = None
 _tokenizer = None
+_base_model = None
+_base_tokenizer = None
 
 
 @asynccontextmanager
@@ -205,6 +221,50 @@ def _predict_single(text: str) -> dict:
             "non-toxic": round(float(probs[0]), 4),
             "toxic": round(float(probs[1]), 4),
         },
+    }
+
+
+def _get_base_model_and_tokenizer():
+    global _base_model, _base_tokenizer
+    if _base_model is None or _base_tokenizer is None:
+        import torch
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+        base_model_dir = os.path.join(_BASE, "model", "best_model")
+        _base_tokenizer = AutoTokenizer.from_pretrained(base_model_dir)
+        _base_model = AutoModelForSequenceClassification.from_pretrained(base_model_dir)
+        _base_model.eval()
+        # Disable gradients globally for torch to speed up CPU inference
+        torch.set_grad_enabled(False)
+    return _base_model, _base_tokenizer
+
+
+def _predict_base_single(text: str) -> dict:
+    """Run inference on a single text string using the base DistilBERT model."""
+    t0 = time.time()
+    model, tokenizer = _get_base_model_and_tokenizer()
+    inputs = tokenizer(
+        text,
+        padding=True,
+        truncation=True,
+        max_length=64,  # Use same MAX_SEQ_LENGTH as custom model for fair comparison
+        return_tensors="pt"
+    )
+    outputs = model(**inputs)
+    logits = outputs.logits[0].detach().numpy()
+    probs = _softmax(logits)
+    pred_label = int(np.argmax(probs))
+    score = float(probs[pred_label])
+    elapsed_ms = (time.time() - t0) * 1000
+
+    return {
+        "label": LABELS[pred_label],
+        "score": round(score, 4),
+        "toxic": pred_label == 1,
+        "confidence": {
+            "non-toxic": round(float(probs[0]), 4),
+            "toxic": round(float(probs[1]), 4),
+        },
+        "latency_ms": round(elapsed_ms, 2),
     }
 
 
@@ -479,6 +539,31 @@ async def predict_url(request: URLRequest):
         return _predict_chunks(text, source="url", source_name=url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+
+@app.post("/predict/compare", response_model=ComparePredictionResponse)
+async def predict_compare(request: PredictionRequest):
+    """Classify a text using both custom BiLSTM and base DistilBERT models to compare results and latency."""
+    if _session is None or _tokenizer is None:
+        raise HTTPException(status_code=503, detail="Model not loaded yet")
+
+    try:
+        # 1. Custom model prediction & latency
+        t_start_custom = time.time()
+        custom_res = _predict_single(request.text)
+        custom_latency = (time.time() - t_start_custom) * 1000
+        custom_res["latency_ms"] = round(custom_latency, 2)
+
+        # 2. Base model prediction & latency
+        base_res = _predict_base_single(request.text)
+
+        return ComparePredictionResponse(
+            text=request.text,
+            custom_model=ModelPredictionResult(**custom_res),
+            base_model=ModelPredictionResult(**base_res),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Comparison prediction failed: {str(e)}")
 
 
 @app.get("/health")

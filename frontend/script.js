@@ -65,6 +65,33 @@
     var chunkToggle = document.getElementById('chunk-toggle');
     var chunkList = document.getElementById('chunk-list');
 
+    // Compare tab
+    var compareInput = document.getElementById('compare-input');
+    var compareCharCount = document.getElementById('compare-char-count');
+    var analyzeCompareBtn = document.getElementById('analyze-compare-btn');
+
+    // Compare results
+    var resultsCompare = document.getElementById('results-compare');
+    var gaugeFillCompareCustom = document.getElementById('gauge-fill-compare-custom');
+    var gaugeValueCompareCustom = document.getElementById('gauge-value-compare-custom');
+    var verdictBadgeCompareCustom = document.getElementById('verdict-badge-compare-custom');
+    var verdictIconCompareCustom = document.getElementById('verdict-icon-compare-custom');
+    var verdictTextCompareCustom = document.getElementById('verdict-text-compare-custom');
+    var verdictDetailCompareCustom = document.getElementById('verdict-detail-compare-custom');
+    var valSafeCompareCustom = document.getElementById('val-safe-compare-custom');
+    var valToxicCompareCustom = document.getElementById('val-toxic-compare-custom');
+    var latencyCompareCustom = document.getElementById('latency-compare-custom');
+
+    var gaugeFillCompareBase = document.getElementById('gauge-fill-compare-base');
+    var gaugeValueCompareBase = document.getElementById('gauge-value-compare-base');
+    var verdictBadgeCompareBase = document.getElementById('verdict-badge-compare-base');
+    var verdictIconCompareBase = document.getElementById('verdict-icon-compare-base');
+    var verdictTextCompareBase = document.getElementById('verdict-text-compare-base');
+    var verdictDetailCompareBase = document.getElementById('verdict-detail-compare-base');
+    var valSafeCompareBase = document.getElementById('val-safe-compare-base');
+    var valToxicCompareBase = document.getElementById('val-toxic-compare-base');
+    var latencyCompareBase = document.getElementById('latency-compare-base');
+
     // Status
     var statusDot = document.getElementById('status-dot');
     var statusText = document.getElementById('status-text');
@@ -129,6 +156,12 @@
     }
     textInput.addEventListener('input', updateCharCount);
 
+    function updateCompareCharCount() {
+        var len = compareInput.value.length;
+        compareCharCount.innerHTML = len.toLocaleString() + '<span class="char-sep">/</span>50,000';
+    }
+    compareInput.addEventListener('input', updateCompareCharCount);
+
 
     // ── Keyboard shortcut (Ctrl/Cmd + Enter) ──────────────────────────────────
 
@@ -139,15 +172,30 @@
         }
     });
 
+    compareInput.addEventListener('keydown', function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            analyzeCompareBtn.click();
+        }
+    });
+
 
     // ── Example chips ─────────────────────────────────────────────────────────
 
     chipButtons.forEach(function (chip) {
         chip.addEventListener('click', function () {
-            textInput.value = chip.getAttribute('data-text');
-            updateCharCount();
-            textInput.focus();
-            setTimeout(function () { analyzeTextBtn.click(); }, 150);
+            var isCompare = chip.closest('#panel-compare') !== null;
+            if (isCompare) {
+                compareInput.value = chip.getAttribute('data-text');
+                updateCompareCharCount();
+                compareInput.focus();
+                setTimeout(function () { analyzeCompareBtn.click(); }, 150);
+            } else {
+                textInput.value = chip.getAttribute('data-text');
+                updateCharCount();
+                textInput.focus();
+                setTimeout(function () { analyzeTextBtn.click(); }, 150);
+            }
         });
     });
 
@@ -198,6 +246,39 @@
             showError(err.message || 'Something went wrong. Is the server running?');
         } finally {
             setLoading(analyzeTextBtn, false);
+        }
+    });
+
+
+    analyzeCompareBtn.addEventListener('click', async function () {
+        var text = compareInput.value.trim();
+        if (!text) {
+            showError('Type or paste some text to compare models.');
+            return;
+        }
+
+        hideError();
+        hideAllResults();
+        setLoading(analyzeCompareBtn, true);
+
+        try {
+            var res = await fetch('/predict/compare', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text }),
+            });
+
+            if (!res.ok) {
+                var errData = await res.json().catch(function () { return { detail: 'Server returned ' + res.status }; });
+                throw new Error(errData.detail || 'Comparison request failed');
+            }
+
+            var data = await res.json();
+            renderComparisonResults(data);
+        } catch (err) {
+            showError(err.message || 'Something went wrong. Is the server running?');
+        } finally {
+            setLoading(analyzeCompareBtn, false);
         }
     });
 
@@ -399,6 +480,51 @@
     }
 
 
+    function renderComparisonResults(data) {
+        // Render Custom Model
+        var custom = data.custom_model;
+        var customToxic = custom.toxic;
+        var customScore = custom.confidence['toxic'];
+
+        resultCardCompareCustom.className = 'result-card ' + (customToxic ? 'is-toxic' : 'is-safe');
+        animateGauge(gaugeFillCompareCustom, gaugeValueCompareCustom, customScore);
+
+        verdictBadgeCompareCustom.className = 'verdict-badge ' + (customToxic ? 'is-toxic' : 'is-safe');
+        verdictIconCompareCustom.textContent = customToxic ? '⚠' : '✓';
+        verdictTextCompareCustom.textContent = customToxic ? 'Toxic detected' : 'Content clean';
+        verdictDetailCompareCustom.textContent = (custom.score * 100).toFixed(1) + '% confidence';
+
+        valSafeCompareCustom.textContent = (custom.confidence['non-toxic'] * 100).toFixed(1) + '%';
+        valToxicCompareCustom.textContent = (customScore * 100).toFixed(1) + '%';
+
+        latencyCompareCustom.innerHTML =
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ' +
+            custom.latency_ms + 'ms latency';
+
+        // Render Base Model
+        var base = data.base_model;
+        var baseToxic = base.toxic;
+        var baseScore = base.confidence['toxic'];
+
+        resultCardCompareBase.className = 'result-card ' + (baseToxic ? 'is-toxic' : 'is-safe');
+        animateGauge(gaugeFillCompareBase, gaugeValueCompareBase, baseScore);
+
+        verdictBadgeCompareBase.className = 'verdict-badge ' + (baseToxic ? 'is-toxic' : 'is-safe');
+        verdictIconCompareBase.textContent = baseToxic ? '⚠' : '✓';
+        verdictTextCompareBase.textContent = baseToxic ? 'Toxic detected' : 'Content clean';
+        verdictDetailCompareBase.textContent = (base.score * 100).toFixed(1) + '% confidence';
+
+        valSafeCompareBase.textContent = (base.confidence['non-toxic'] * 100).toFixed(1) + '%';
+        valToxicCompareBase.textContent = (baseScore * 100).toFixed(1) + '%';
+
+        latencyCompareBase.innerHTML =
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ' +
+            base.latency_ms + 'ms latency';
+
+        resultsCompare.classList.add('is-visible');
+    }
+
+
     function renderChunkList(chunks) {
         var html = '';
         for (var i = 0; i < chunks.length; i++) {
@@ -479,6 +605,7 @@
     function hideAllResults() {
         resultsSingle.classList.remove('is-visible');
         resultsBulk.classList.remove('is-visible');
+        resultsCompare.classList.remove('is-visible');
     }
 
     function formatFileSize(bytes) {

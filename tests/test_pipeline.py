@@ -360,4 +360,38 @@ class TestAPI:
         assert data["source_name"] == "https://example.com/nice-page"
         assert data["overall_toxic"] is False
 
+    async def test_predict_compare_endpoint(self):
+        from httpx import AsyncClient, ASGITransport
+        from serve import app
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=True),
+            base_url="http://test",
+        ) as client:
+            async with app.router.lifespan_context(app):
+                response = await client.post(
+                    "/predict/compare",
+                    json={"text": "You are an idiot and should be banned."}
+                )
+        assert response.status_code == 200
+        data = response.json()
+        assert "text" in data
+        assert "custom_model" in data
+        assert "base_model" in data
+        
+        # Verify custom model fields
+        custom = data["custom_model"]
+        assert "label" in custom
+        assert "score" in custom
+        assert "toxic" in custom
+        assert "confidence" in custom
+        assert "latency_ms" in custom
+        
+        # Verify base model fields
+        base = data["base_model"]
+        assert "label" in base
+        assert "score" in base
+        assert "toxic" in base
+        assert "confidence" in base
+        assert "latency_ms" in base
+
 
