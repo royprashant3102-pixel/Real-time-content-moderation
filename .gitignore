@@ -6,8 +6,11 @@ env/
 # Model weights — only keep quantized ONNX (64MB) + tokenizer files for deployment
 # Large files that exceed GitHub's 100MB limit:
 model/best_model/model.safetensors
+model/best_model_multilingual/
+data/tokenizer_multilingual/
 model/onnx/model.onnx
 model/onnx/model_optimized.onnx
+model/onnx/model_quantized.onnx
 # PyTorch training checkpoints
 model/checkpoint-*/
 model/*.pth

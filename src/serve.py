@@ -233,8 +233,6 @@ def _get_base_model_and_tokenizer():
         _base_tokenizer = AutoTokenizer.from_pretrained(base_model_dir)
         _base_model = AutoModelForSequenceClassification.from_pretrained(base_model_dir)
         _base_model.eval()
-        # Disable gradients globally for torch to speed up CPU inference
-        torch.set_grad_enabled(False)
     return _base_model, _base_tokenizer
 
 
