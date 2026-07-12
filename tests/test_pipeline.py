@@ -410,4 +410,18 @@ class TestCompareScript:
         output_file = os.path.join(compare_models.PROJECT_ROOT, "model_comparison_results.md")
         assert os.path.exists(output_file)
 
+    def test_on_kaggle_script(self, monkeypatch):
+        """Verify that test_on_kaggle.py runs successfully on a tiny subset."""
+        import test_on_kaggle
+        # Monkeypatch MAX_SAMPLES and BATCH_SIZE for a very fast test
+        monkeypatch.setattr(test_on_kaggle, "MAX_SAMPLES", 10)
+        monkeypatch.setattr(test_on_kaggle, "BATCH_SIZE", 2)
+        
+        # Run main and make sure it doesn't raise exceptions
+        test_on_kaggle.main()
+        
+        # Verify the comparison results file was created
+        output_file = os.path.join(test_on_kaggle.PROJECT_ROOT, "kaggle_test_results.md")
+        assert os.path.exists(output_file)
+
 
