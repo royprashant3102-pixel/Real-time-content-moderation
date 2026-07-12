@@ -395,3 +395,19 @@ class TestAPI:
         assert "latency_ms" in base
 
 
+class TestCompareScript:
+    def test_compare_models_script(self, monkeypatch):
+        """Verify that compare_models.py runs successfully on a tiny subset."""
+        import compare_models
+        # Monkeypatch MAX_SAMPLES and BATCH_SIZE for a very fast test
+        monkeypatch.setattr(compare_models, "MAX_SAMPLES", 10)
+        monkeypatch.setattr(compare_models, "BATCH_SIZE", 2)
+        
+        # Run main and make sure it doesn't raise exceptions
+        compare_models.main()
+        
+        # Verify the comparison results file was created
+        output_file = os.path.join(compare_models.PROJECT_ROOT, "model_comparison_results.md")
+        assert os.path.exists(output_file)
+
+
