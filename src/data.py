@@ -1,35 +1,42 @@
 """
 data.py — Load, clean, tokenize, and split the dataset for content moderation.
 
-Uses the 'civil_comments' dataset from Hugging Face. Falls back to a synthetic
-sample if download fails.
+Uses:
+  - English: 'civil_comments' from Hugging Face (30K samples)
+  - Hindi/Hinglish: 'textdetox/multilingual_toxicity_dataset' + curated Hinglish samples
+  - Falls back to synthetic data if downloads fail.
 
 Config variables at top for easy tuning.
 """
 
 import os
 import sys
+import random
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
-MAX_SAMPLES = 10_000          # Total samples to use (keep small for fast runs)
+MAX_SAMPLES = 30_000          # English samples from civil_comments
+MAX_HINGLISH_SAMPLES = 3_000  # Hindi/Hinglish samples
 MAX_SEQ_LENGTH = 128          # DistilBERT max tokens per input
 TOXICITY_THRESHOLD = 0.5      # civil_comments score >= this → toxic (label=1)
 TEST_SIZE = 0.15
 VAL_SIZE = 0.15               # of the remaining after test split
 RANDOM_SEED = 42
-MODEL_NAME = "distilbert-base-uncased"
+MODEL_NAME = "distilbert-base-multilingual-cased"   # Multilingual model (104 languages)
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
 # ─────────────────────────────────────────────────────────────────────────────
 
 import re
 import numpy as np
 
+
 def clean_text(text: str) -> str:
-    """Basic text cleaning: lowercase, strip URLs, extra whitespace."""
-    text = text.lower()
+    """Text cleaning that preserves multilingual characters (Hindi, Devanagari, etc.).
+    Only removes URLs, excessive whitespace, and normalizes spacing.
+    """
+    text = text.strip()
     text = re.sub(r"http\S+|www\.\S+", "", text)        # remove URLs
-    text = re.sub(r"[^a-z0-9\s.,!?'\"-]", " ", text)    # keep basic punctuation
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"<[^>]+>", "", text)                   # remove HTML tags
+    text = re.sub(r"\s+", " ", text).strip()              # normalize whitespace
     return text
 
 
@@ -42,7 +49,7 @@ def load_dataset_safe(max_samples: int = MAX_SAMPLES):
     """
     try:
         from datasets import load_dataset
-        print("⏳ Loading civil_comments dataset from Hugging Face...")
+        print(f"⏳ Loading civil_comments dataset ({max_samples} samples) from Hugging Face...")
         ds = load_dataset(
             "google/civil_comments",
             split=f"train[:{max_samples}]",
@@ -50,7 +57,7 @@ def load_dataset_safe(max_samples: int = MAX_SAMPLES):
         )
         texts = [clean_text(row["text"]) for row in ds]
         labels = [1 if row["toxicity"] >= TOXICITY_THRESHOLD else 0 for row in ds]
-        print(f"✅ Loaded {len(texts)} samples from civil_comments.")
+        print(f"✅ Loaded {len(texts)} English samples from civil_comments.")
         return texts, labels
 
     except Exception as e:
@@ -59,9 +66,167 @@ def load_dataset_safe(max_samples: int = MAX_SAMPLES):
         return _create_synthetic_dataset(max_samples)
 
 
+def load_hinglish_dataset(max_samples: int = MAX_HINGLISH_SAMPLES):
+    """Load Hindi/Hinglish toxicity data from HuggingFace + curated samples.
+    
+    Returns: (texts, labels) as lists.
+    """
+    texts, labels = [], []
+    
+    # ── Part 1: Try loading Hindi split from HuggingFace ──
+    hf_loaded = 0
+    try:
+        from datasets import load_dataset
+        print(f"⏳ Loading Hindi toxicity dataset from HuggingFace...")
+        ds = load_dataset(
+            "textdetox/multilingual_toxicity_dataset",
+            split=f"hi[:{max_samples // 2}]",
+            trust_remote_code=True,
+        )
+        for row in ds:
+            texts.append(clean_text(row["text"]))
+            labels.append(int(row["toxic"]))
+        hf_loaded = len(texts)
+        print(f"✅ Loaded {hf_loaded} Hindi samples from HuggingFace.")
+    except Exception as e:
+        print(f"⚠️  Failed to load Hindi dataset from HuggingFace: {e}")
+    
+    # ── Part 2: Curated Hinglish toxic/non-toxic examples ──
+    # These cover transliterated Hindi profanity, slurs, and common Hinglish toxic patterns
+    # that the HuggingFace dataset might miss (romanized Hindi).
+    
+    hinglish_toxic = [
+        # Sexual harassment / vulgar
+        "mai tumko chodna chahta hu",
+        "teri maa ki gaali",
+        "bhosdi ke tu yahan se nikal",
+        "saale madarchod kya kar raha hai",
+        "chutiya hai tu bilkul",
+        "teri behen ko pel dunga",
+        "gaand mara saale",
+        "tu randi hai saali",
+        "tere baap ka naukar nahi hu",
+        "kutte ki aulad hai tu",
+        "haramkhor kahi ka nikal yahan se",
+        "tujhe maar dunga saale",
+        "tu pagal hai kya be",
+        "gadhe jaisi shakal hai teri",
+        "nalayak insaan hai tu",
+        "bhenchod kya bakwas hai ye",
+        "tu ek number ka ghatiya insaan hai",
+        "tere jaise log ko zinda nahi rehna chahiye",
+        "kamina saala dhokebaaz",
+        "tu hijda hai saala",
+        "muh tod dunga tera",
+        "teri aukat kya hai saale",
+        "bhikhari saala aukaat mein reh",
+        "jaahil insaan hai tu bilkul",
+        "tujhse bada bewakoof koi nahi",
+        "I hate you so much tum bahut gande ho",
+        "you stupid idiot pagal insaan",
+        "shut up chup kar saale",
+        "you are disgusting ghatiya aadmi",
+        "die you fool mar ja saale",
+        "tu worst hai sabse ganda insaan",
+        "nikal yahan se kutte",
+        "tere muh pe thook dunga",
+        "gandagi hai tu insaan nahi",
+        "besharmi ki hadd hai teri",
+        "tu duniya ka sabse bada chutiya hai",
+        "tujhe dekhke ulti aati hai",
+        "teri shakal dekhne layak nahi hai",
+        "kamina kahi ka dhokha deta hai",
+        "haramzada saala jhootha hai",
+        # Threats and violence
+        "tujhe jaan se maar dunga",
+        "tera khoon kar dunga",
+        "tere ghar mein aag laga dunga",
+        "tujhe utha ke phenk dunga",
+        "tere haath pair tod dunga",
+        # Hate speech
+        "tum sab ek jaise ghatiya ho",
+        "tumhari jaat hi aisi hai nalayak",
+        "tum log insaan nahi ho janwar ho",
+        "tere dharm wale sab chor hai",
+        "tumhari community barbaad hai",
+    ]
+    
+    hinglish_non_toxic = [
+        "aap bahut acche insaan ho",
+        "mujhe aapki baat bahut pasand aayi",
+        "bohot acha kaam kiya aapne",
+        "dhanyavaad aapki madad ke liye",
+        "yeh bahut informative hai shukriya",
+        "mai aapki respect karta hu",
+        "aapka point bahut valid hai",
+        "hum sab milke kaam karenge",
+        "bahut badhiya article likha hai",
+        "aapne sahi kaha bilkul sahi baat",
+        "mujhe aapse kuch seekhne ko mila",
+        "aapka experience kaafi accha hai",
+        "yeh topic bahut interesting hai",
+        "mai aapki soch se agree karta hu",
+        "shukriya itna accha samjhane ke liye",
+        "aap bahut talented ho",
+        "yeh kaam bahut mushkil tha lekin aapne kar dikhaya",
+        "bahut hi sundar likha hai aapne",
+        "aapka perspective samajhne mein maza aaya",
+        "chaliye milke isko solve karte hain",
+        "thank you bhai bahut help ki tumne",
+        "good job yaar bahut accha kiya",
+        "aapki guidance se bahut fayda hua",
+        "hum sab saath mein kar sakte hain",
+        "bahut acchi thinking hai aapki",
+        "main aapka supporter hoon",
+        "aap inspiring ho bahut",
+        "sahi direction mein ja rahe ho",
+        "keep it up bhai bahut accha",
+        "mujhe khushi hui yeh padhke",
+        "aapki mehnat rang laayegi zaroor",
+        "bahut pyaari soch hai aapki",
+        "aap sabse acche teacher ho",
+        "yeh conversation bahut productive rahi",
+        "aap logon ka kaam dekhke dil khush ho gaya",
+        "aapne bahut accha samjhaya thanks",
+        "mai aapse sehmat hu completely",
+        "yeh solution bahut creative hai",
+        "aapki writing style bahut engaging hai",
+        "bohot maza aaya padhke",
+    ]
+    
+    # Add curated Hinglish samples (replicate to increase volume)
+    random.seed(RANDOM_SEED)
+    curated_toxic = []
+    curated_non_toxic = []
+    
+    # Replicate and slightly vary to create more samples
+    target_per_class = max(max_samples // 4, 300)
+    
+    while len(curated_toxic) < target_per_class:
+        for t in hinglish_toxic:
+            curated_toxic.append(t)
+            if len(curated_toxic) >= target_per_class:
+                break
+    
+    while len(curated_non_toxic) < target_per_class:
+        for t in hinglish_non_toxic:
+            curated_non_toxic.append(t)
+            if len(curated_non_toxic) >= target_per_class:
+                break
+    
+    texts.extend(curated_toxic)
+    labels.extend([1] * len(curated_toxic))
+    texts.extend(curated_non_toxic)
+    labels.extend([0] * len(curated_non_toxic))
+    
+    print(f"✅ Total Hinglish/Hindi samples: {len(texts)} ({hf_loaded} from HF + {len(curated_toxic) + len(curated_non_toxic)} curated)")
+    print(f"   Toxic: {sum(labels)} | Non-toxic: {len(labels) - sum(labels)}")
+    
+    return texts, labels
+
+
 def _create_synthetic_dataset(n: int = 1000):
     """Generate a small synthetic toxic/non-toxic dataset for testing."""
-    import random
     random.seed(RANDOM_SEED)
 
     toxic_templates = [
@@ -103,7 +268,7 @@ def _create_synthetic_dataset(n: int = 1000):
 
 
 def tokenize_data(texts, labels):
-    """Tokenize texts using the DistilBERT tokenizer. Returns a HF Dataset."""
+    """Tokenize texts using the multilingual DistilBERT tokenizer. Returns a HF Dataset."""
     from transformers import AutoTokenizer
     from datasets import Dataset
 
@@ -158,11 +323,31 @@ def report_class_distribution(splits: dict):
 
 def prepare_data(max_samples: int = MAX_SAMPLES):
     """
-    Full pipeline: load → clean → tokenize → split → report.
+    Full pipeline: load English + Hinglish → clean → merge → tokenize → split → report.
     Returns: (splits_dict, tokenizer)
     """
-    texts, labels = load_dataset_safe(max_samples)
-    dataset, tokenizer = tokenize_data(texts, labels)
+    # 1. Load English data
+    print("\n── Loading English Data ──")
+    en_texts, en_labels = load_dataset_safe(max_samples)
+    
+    # 2. Load Hinglish/Hindi data
+    print("\n── Loading Hinglish/Hindi Data ──")
+    hi_texts, hi_labels = load_hinglish_dataset(MAX_HINGLISH_SAMPLES)
+    
+    # 3. Merge and shuffle
+    all_texts = en_texts + hi_texts
+    all_labels = en_labels + hi_labels
+    
+    np.random.seed(RANDOM_SEED)
+    indices = np.random.permutation(len(all_texts))
+    all_texts = [all_texts[i] for i in indices]
+    all_labels = [all_labels[i] for i in indices]
+    
+    print(f"\n📊 Merged dataset: {len(all_texts)} total samples")
+    print(f"   Toxic: {sum(all_labels)} | Non-toxic: {len(all_labels) - sum(all_labels)}")
+    
+    # 4. Tokenize and split
+    dataset, tokenizer = tokenize_data(all_texts, all_labels)
     splits = split_dataset(dataset)
     report_class_distribution(splits)
 

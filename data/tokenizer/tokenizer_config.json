@@ -43,7 +43,7 @@
   },
   "clean_up_tokenization_spaces": false,
   "cls_token": "[CLS]",
-  "do_lower_case": true,
+  "do_lower_case": false,
   "extra_special_tokens": {},
   "mask_token": "[MASK]",
   "model_max_length": 512,

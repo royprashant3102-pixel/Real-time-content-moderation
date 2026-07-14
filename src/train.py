@@ -1,22 +1,30 @@
 """
-train.py — Fine-tune DistilBERT for binary toxicity classification.
+train.py — Fine-tune multilingual DistilBERT for binary toxicity classification.
 
-Designed to run on CPU-only machines with small defaults.
+Improvements over v1:
+  - Multilingual model: distilbert-base-multilingual-cased (104 languages)
+  - 30K+ samples (English + Hinglish/Hindi)
+  - 4 epochs for better convergence
+  - Class-weight balancing via weighted CrossEntropyLoss
+  - Better warmup scheduling for larger dataset
+
+Designed to run on CPU-only machines.
 Config variables at top for easy tuning.
 """
 
 import os
 import sys
 import torch
+import numpy as np
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
-NUM_EPOCHS = 2
+NUM_EPOCHS = 4
 BATCH_SIZE = 16
 LEARNING_RATE = 2e-5
 WEIGHT_DECAY = 0.01
-WARMUP_STEPS = 50
-MAX_SAMPLES = 10_000          # Passed to data.prepare_data()
-MODEL_NAME = "distilbert-base-uncased"
+WARMUP_RATIO = 0.1            # 10% of total steps for warmup (better than fixed steps)
+MAX_SAMPLES = 30_000           # Passed to data.prepare_data()
+MODEL_NAME = "distilbert-base-multilingual-cased"   # Multilingual (104 languages)
 NUM_LABELS = 2
 OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model"))
 LOG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "logs"))
@@ -40,7 +48,6 @@ def get_device():
 def compute_metrics(eval_pred):
     """Compute accuracy, precision, recall, F1 for the Trainer."""
     from sklearn.metrics import accuracy_score, precision_recall_fscore_support
-    import numpy as np
 
     logits, labels = eval_pred
     preds = np.argmax(logits, axis=-1)
@@ -58,8 +65,43 @@ def compute_metrics(eval_pred):
     }
 
 
+def compute_class_weights(train_dataset):
+    """Compute inverse-frequency class weights from the training set labels.
+    
+    This ensures the model pays more attention to the minority class (toxic),
+    which is critical for imbalanced datasets like civil_comments (~10% toxic).
+    
+    Returns: torch.FloatTensor of shape (num_classes,)
+    """
+    labels = train_dataset["label"]
+    if hasattr(labels, "tolist"):
+        labels = labels.tolist()
+    
+    labels_array = np.array(labels)
+    class_counts = np.bincount(labels_array, minlength=NUM_LABELS)
+    total = len(labels_array)
+    
+    # Inverse frequency weighting: weight = total / (num_classes * count)
+    weights = total / (NUM_LABELS * class_counts.astype(np.float64))
+    
+    print(f"\n⚖️  Class Weight Balancing:")
+    print(f"   Class 0 (non-toxic): {class_counts[0]:>6} samples → weight = {weights[0]:.4f}")
+    print(f"   Class 1 (toxic):     {class_counts[1]:>6} samples → weight = {weights[1]:.4f}")
+    print(f"   Toxic class gets {weights[1]/weights[0]:.1f}x more weight in the loss")
+    
+    return torch.FloatTensor(weights)
+
+
+class WeightedTrainer(torch.nn.Module):
+    """Custom Trainer subclass that uses weighted CrossEntropyLoss
+    to handle class imbalance. The minority class (toxic) gets a higher
+    weight so the model is penalized more for missing toxic content.
+    """
+    pass  # We'll use the HuggingFace Trainer's compute_loss override
+
+
 def train():
-    """Fine-tune DistilBERT and save the model."""
+    """Fine-tune multilingual DistilBERT with class-weight balancing and save the model."""
     from transformers import (
         AutoModelForSequenceClassification,
         TrainingArguments,
@@ -73,19 +115,40 @@ def train():
     print("\n── Step 1: Preparing data ──")
     splits, tokenizer = prepare_data(max_samples=MAX_SAMPLES)
 
-    # ── 2. Load pre-trained model ────────────────────────────────────────────
-    print("\n── Step 2: Loading pre-trained DistilBERT ──")
+    # ── 2. Compute class weights ─────────────────────────────────────────────
+    class_weights = compute_class_weights(splits["train"])
+
+    # ── 3. Load pre-trained model ────────────────────────────────────────────
+    print(f"\n── Step 2: Loading pre-trained {MODEL_NAME} ──")
     try:
         model = AutoModelForSequenceClassification.from_pretrained(
             MODEL_NAME,
             num_labels=NUM_LABELS,
         )
         print(f"✅ Model loaded: {MODEL_NAME}")
+        param_count = sum(p.numel() for p in model.parameters())
+        print(f"   Parameters: {param_count:,}")
     except Exception as e:
         print(f"❌ Failed to load model: {e}")
         raise
 
-    # ── 3. Configure training ────────────────────────────────────────────────
+    # ── 4. Create custom Trainer with weighted loss ──────────────────────────
+    class WeightedLossTrainer(Trainer):
+        """Trainer that overrides compute_loss to use class-weighted CrossEntropyLoss."""
+        
+        def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+            labels = inputs.pop("labels")
+            outputs = model(**inputs)
+            logits = outputs.logits
+            
+            # Move class weights to same device as logits
+            weight = class_weights.to(logits.device)
+            loss_fn = torch.nn.CrossEntropyLoss(weight=weight)
+            loss = loss_fn(logits, labels)
+            
+            return (loss, outputs) if return_outputs else loss
+
+    # ── 5. Configure training ────────────────────────────────────────────────
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -96,7 +159,7 @@ def train():
         per_device_eval_batch_size=BATCH_SIZE * 2,
         learning_rate=LEARNING_RATE,
         weight_decay=WEIGHT_DECAY,
-        warmup_steps=WARMUP_STEPS,
+        warmup_ratio=WARMUP_RATIO,         # 10% warmup instead of fixed steps
         eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
@@ -111,9 +174,11 @@ def train():
         seed=42,
     )
 
-    # ── 4. Train ─────────────────────────────────────────────────────────────
-    print("\n── Step 3: Training ──")
-    trainer = Trainer(
+    # ── 6. Train ─────────────────────────────────────────────────────────────
+    print(f"\n── Step 3: Training ({NUM_EPOCHS} epochs, {len(splits['train'])} samples) ──")
+    print(f"   Estimated time: ~25-40 min on Apple Silicon CPU")
+    
+    trainer = WeightedLossTrainer(
         model=model,
         args=training_args,
         train_dataset=splits["train"],
@@ -129,14 +194,14 @@ def train():
         print(f"❌ Training failed: {e}")
         raise
 
-    # ── 5. Save best model ───────────────────────────────────────────────────
+    # ── 7. Save best model ───────────────────────────────────────────────────
     print("\n── Step 4: Saving model ──")
     final_model_path = os.path.join(OUTPUT_DIR, "best_model")
     trainer.save_model(final_model_path)
     tokenizer.save_pretrained(final_model_path)
     print(f"💾 Model saved to: {final_model_path}")
 
-    # ── 6. Quick validation metrics ──────────────────────────────────────────
+    # ── 8. Quick validation metrics ──────────────────────────────────────────
     print("\n── Step 5: Validation metrics ──")
     val_metrics = trainer.evaluate(splits["val"])
     for k, v in val_metrics.items():

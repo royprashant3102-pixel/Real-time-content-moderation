@@ -72,6 +72,8 @@
 
     // Compare results
     var resultsCompare = document.getElementById('results-compare');
+    var resultCardCompareCustom = document.getElementById('result-card-compare-custom');
+    var resultCardCompareBase = document.getElementById('result-card-compare-base');
     var gaugeFillCompareCustom = document.getElementById('gauge-fill-compare-custom');
     var gaugeValueCompareCustom = document.getElementById('gauge-value-compare-custom');
     var verdictBadgeCompareCustom = document.getElementById('verdict-badge-compare-custom');

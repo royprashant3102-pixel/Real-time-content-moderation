@@ -180,6 +180,25 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
 
 # ── Core inference helpers ───────────────────────────────────────────────────
 
+EXPLICIT_PROFANITY_PATTERN = re.compile(
+    r"\b("
+    r"chutiya|chutiye|chut|chuto|bhosdike|bhosdika|bhosdi|bsdk|madarchod|maderchod|maderchodh|mc|bc|"
+    r"bhenchod|behenchod|bhenchode|gaand|gand|gandmara|harami|randi|kamina|kutta|chodna|loda|lauda|laude|bhosda|"
+    r"fuck|fucking|fucker|fck|shit|bitch|asshole|bastard|cunt|dick|pussy|slut|whore|"
+    r"nigger|nigga|faggot|retard"
+    r")\b",
+    re.IGNORECASE
+)
+
+
+def _apply_toxicity_boost(text: str, toxic_prob: float) -> tuple[float, float]:
+    """Hybrid moderation logic: If explicit profanity/slurs are present, ensure toxicity >= 0.965."""
+    if EXPLICIT_PROFANITY_PATTERN.search(text):
+        toxic_prob = max(toxic_prob, 0.965)
+    non_toxic_prob = 1.0 - toxic_prob
+    return round(non_toxic_prob, 4), round(toxic_prob, 4)
+
+
 def _softmax(logits: np.ndarray) -> np.ndarray:
     """Numerically stable softmax."""
     exp = np.exp(logits - np.max(logits, axis=-1, keepdims=True))
@@ -210,16 +229,18 @@ def _predict_single(text: str) -> dict:
     feed = {"input_ids": input_ids, "attention_mask": attention_mask}
     logits = _session.run(None, feed)[0][0]
     probs = _softmax(logits)
-    pred_label = int(np.argmax(probs))
-    score = float(probs[pred_label])
+    
+    non_toxic_prob, toxic_prob = _apply_toxicity_boost(text, float(probs[1]))
+    pred_label = 1 if toxic_prob >= 0.5 else 0
+    score = toxic_prob if pred_label == 1 else non_toxic_prob
 
     return {
         "label": LABELS[pred_label],
         "score": round(score, 4),
         "toxic": pred_label == 1,
         "confidence": {
-            "non-toxic": round(float(probs[0]), 4),
-            "toxic": round(float(probs[1]), 4),
+            "non-toxic": non_toxic_prob,
+            "toxic": toxic_prob,
         },
     }
 
@@ -237,21 +258,23 @@ def _get_base_model_and_tokenizer():
 
 
 def _predict_base_single(text: str) -> dict:
-    """Run inference on a single text string using the base DistilBERT model."""
+    """Run inference on a single text string using the base model."""
     t0 = time.time()
     model, tokenizer = _get_base_model_and_tokenizer()
     inputs = tokenizer(
         text,
         padding=True,
         truncation=True,
-        max_length=64,  # Use same MAX_SEQ_LENGTH as custom model for fair comparison
+        max_length=64,
         return_tensors="pt"
     )
     outputs = model(**inputs)
     logits = outputs.logits[0].detach().numpy()
     probs = _softmax(logits)
-    pred_label = int(np.argmax(probs))
-    score = float(probs[pred_label])
+    
+    non_toxic_prob, toxic_prob = _apply_toxicity_boost(text, float(probs[1]))
+    pred_label = 1 if toxic_prob >= 0.5 else 0
+    score = toxic_prob if pred_label == 1 else non_toxic_prob
     elapsed_ms = (time.time() - t0) * 1000
 
     return {
@@ -259,8 +282,8 @@ def _predict_base_single(text: str) -> dict:
         "score": round(score, 4),
         "toxic": pred_label == 1,
         "confidence": {
-            "non-toxic": round(float(probs[0]), 4),
-            "toxic": round(float(probs[1]), 4),
+            "non-toxic": non_toxic_prob,
+            "toxic": toxic_prob,
         },
         "latency_ms": round(elapsed_ms, 2),
     }
@@ -290,16 +313,17 @@ def _predict_batch(texts: list[str]) -> list[dict]:
     all_probs = _softmax(all_logits)
 
     results = []
-    for probs in all_probs:
-        pred_label = int(np.argmax(probs))
-        score = float(probs[pred_label])
+    for text, probs in zip(texts, all_probs):
+        non_toxic_prob, toxic_prob = _apply_toxicity_boost(text, float(probs[1]))
+        pred_label = 1 if toxic_prob >= 0.5 else 0
+        score = toxic_prob if pred_label == 1 else non_toxic_prob
         results.append({
             "label": LABELS[pred_label],
             "score": round(score, 4),
             "toxic": pred_label == 1,
             "confidence": {
-                "non-toxic": round(float(probs[0]), 4),
-                "toxic": round(float(probs[1]), 4),
+                "non-toxic": non_toxic_prob,
+                "toxic": toxic_prob,
             },
         })
     return results
