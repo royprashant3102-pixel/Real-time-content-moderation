@@ -11,6 +11,7 @@ NUM_EPOCHS = 5
 BATCH_SIZE = 32
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-4
+MAX_GRAD_NORM = 1.0  # gradient clipping for training stability
 MAX_SAMPLES = 10_000
 OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model"))
 # ─────────────────────────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion, device):
         loss = criterion(logits, labels)
         
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), MAX_GRAD_NORM)
         optimizer.step()
         
         total_loss += loss.item()

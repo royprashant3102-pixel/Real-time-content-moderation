@@ -15,6 +15,7 @@ import io
 import re
 import time
 from functools import lru_cache
+import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -160,10 +161,13 @@ async def lifespan(app: FastAPI):
 # ── App setup ────────────────────────────────────────────────────────────────
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
+_APP_VERSION = "2.1.0"
+_start_time = datetime.datetime.now(datetime.timezone.utc)
+
 app = FastAPI(
     title="Content Moderation API",
     description="Real-time toxicity detection using ONNX-optimized DistilBERT",
-    version="2.0.0",
+    version=_APP_VERSION,
     lifespan=lifespan,
 )
 
@@ -591,8 +595,11 @@ async def predict_compare(request: PredictionRequest):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
+    uptime = datetime.datetime.now(datetime.timezone.utc) - _start_time
     return {
         "status": "healthy",
+        "version": _APP_VERSION,
+        "uptime_seconds": int(uptime.total_seconds()),
         "model_loaded": _session is not None,
         "tokenizer_loaded": _tokenizer is not None,
     }
