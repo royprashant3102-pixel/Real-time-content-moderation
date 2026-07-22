@@ -96,6 +96,24 @@
                         autofocus
                     ></textarea>
 
+                    <!-- ── Live WebSocket indicator ── -->
+                    <div class="live-bar" id="live-bar">
+                        <div class="live-bar-left">
+                            <span class="live-pulse" id="live-pulse"></span>
+                            <span class="live-label" id="live-label">Live analysis</span>
+                        </div>
+                        <div class="live-bar-right">
+                            <div class="live-gauge-wrap">
+                                <div class="live-gauge-track">
+                                    <div class="live-gauge-fill" id="live-gauge-fill"></div>
+                                </div>
+                                <span class="live-score" id="live-score">—</span>
+                            </div>
+                            <span class="live-verdict" id="live-verdict"></span>
+                            <span class="live-latency" id="live-latency"></span>
+                        </div>
+                    </div>
+
                     <div class="input-card-footer">
                         <div class="example-chips" id="example-chips">
                             <span class="chips-label">Try:</span>

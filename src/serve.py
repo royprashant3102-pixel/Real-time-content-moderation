@@ -37,7 +37,7 @@ PORT = int(os.environ.get("PORT", 7860))  # 7860 for HF Spaces, 8000 locally
 # ─────────────────────────────────────────────────────────────────────────────
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -603,6 +603,66 @@ async def health():
         "model_loaded": _session is not None,
         "tokenizer_loaded": _tokenizer is not None,
     }
+
+
+# ── WebSocket — real-time live typing analysis ────────────────────────────────
+
+@app.websocket("/ws/predict")
+async def ws_predict(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time toxicity analysis as the user types.
+
+    Protocol:
+      Client → Server : plain text string (the current textarea value)
+      Server → Client : JSON object with label, score, toxic, confidence, latency_ms
+
+    The client is expected to debounce sends (e.g. 300 ms after last keystroke).
+    The server processes each message independently and immediately replies.
+    """
+    await websocket.accept()
+    try:
+        while True:
+            text = await websocket.receive_text()
+
+            # Guard: model not loaded yet
+            if _session is None or _tokenizer is None:
+                await websocket.send_json({
+                    "error": "Model not loaded yet. Please wait a moment."
+                })
+                continue
+
+            # Skip empty / whitespace-only inputs
+            stripped = text.strip()
+            if not stripped:
+                await websocket.send_json({
+                    "label": "non-toxic",
+                    "score": 0.0,
+                    "toxic": False,
+                    "confidence": {"non-toxic": 1.0, "toxic": 0.0},
+                    "latency_ms": 0.0,
+                    "char_count": 0,
+                })
+                continue
+
+            # Truncate to max allowed length
+            if len(stripped) > MAX_TEXT_LENGTH:
+                stripped = stripped[:MAX_TEXT_LENGTH]
+
+            try:
+                t0 = time.time()
+                result = _predict_single(stripped)
+                latency_ms = round((time.time() - t0) * 1000, 2)
+
+                await websocket.send_json({
+                    **result,
+                    "latency_ms": latency_ms,
+                    "char_count": len(stripped),
+                })
+            except Exception as exc:
+                await websocket.send_json({"error": f"Inference failed: {exc}"})
+
+    except WebSocketDisconnect:
+        pass  # Client disconnected — normal teardown
 
 
 if __name__ == "__main__":

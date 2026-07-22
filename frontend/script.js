@@ -202,6 +202,134 @@
     });
 
 
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  WEBSOCKET — LIVE TYPING ANALYSIS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    var liveBar      = document.getElementById('live-bar');
+    var livePulse    = document.getElementById('live-pulse');
+    var liveLabel    = document.getElementById('live-label');
+    var liveGaugeFill= document.getElementById('live-gauge-fill');
+    var liveScore    = document.getElementById('live-score');
+    var liveVerdict  = document.getElementById('live-verdict');
+    var liveLatency  = document.getElementById('live-latency');
+
+    var ws = null;
+    var wsReconnectDelay = 1000;  // ms, doubles on each failure (max 16 s)
+    var wsDebounceTimer  = null;
+    var WS_DEBOUNCE_MS   = 300;
+    var WS_MIN_CHARS     = 3;     // don't send fewer than this many chars
+
+    function wsConnect() {
+        var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        var url   = proto + '://' + location.host + '/ws/predict';
+        ws = new WebSocket(url);
+
+        ws.onopen = function () {
+            wsReconnectDelay = 1000;   // reset back-off
+            setPulse('connecting');
+            // Immediately send current text if any
+            var t = textInput.value.trim();
+            if (t.length >= WS_MIN_CHARS) ws.send(t);
+        };
+
+        ws.onmessage = function (evt) {
+            try {
+                var data = JSON.parse(evt.data);
+                if (data.error) { return; }
+                updateLiveBar(data);
+            } catch (_) {}
+        };
+
+        ws.onerror  = function () { /* onclose will fire next */ };
+        ws.onclose  = function () {
+            ws = null;
+            setPulse('connecting');
+            // Exponential back-off reconnect
+            wsReconnectDelay = Math.min(wsReconnectDelay * 2, 16000);
+            setTimeout(wsConnect, wsReconnectDelay);
+        };
+    }
+
+    function wsSend(text) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(text);
+        }
+    }
+
+    /* Update all live-bar elements from a prediction payload */
+    function updateLiveBar(data) {
+        var toxicPct = Math.round((data.confidence['toxic'] || 0) * 100);
+        var isToxic  = data.toxic;
+        var state    = isToxic ? (toxicPct >= 70 ? 'toxic' : 'warning') : 'safe';
+
+        // Bar visibility + colour state
+        liveBar.classList.add('is-active');
+        liveBar.className = 'live-bar is-active is-' + state;
+
+        // Pulse dot
+        setPulse(state);
+
+        // Gauge
+        liveGaugeFill.style.width = toxicPct + '%';
+        liveGaugeFill.className   = 'live-gauge-fill' + (state !== 'safe' ? ' is-' + state : '');
+
+        // Score
+        liveScore.textContent = toxicPct + '%';
+
+        // Verdict badge
+        liveVerdict.className   = 'live-verdict is-' + state;
+        liveVerdict.textContent = isToxic ? (toxicPct >= 70 ? '⚠ Toxic' : '⚡ Borderline') : '✓ Clean';
+
+        // Latency chip
+        if (data.latency_ms > 0) {
+            liveLatency.textContent = data.latency_ms + 'ms';
+        }
+    }
+
+    function setPulse(state) {
+        livePulse.className = 'live-pulse' + (state ? ' is-' + state : '');
+    }
+
+    function hideLiveBar() {
+        liveBar.classList.remove('is-active');
+        liveBar.className = 'live-bar';
+        liveGaugeFill.style.width = '0%';
+        liveScore.textContent = '—';
+        liveVerdict.className = 'live-verdict';
+        liveVerdict.textContent = '';
+        liveLatency.textContent = '';
+        setPulse('');
+    }
+
+    /* Debounced send on every keystroke */
+    textInput.addEventListener('input', function () {
+        clearTimeout(wsDebounceTimer);
+        var text = textInput.value.trim();
+        if (text.length < WS_MIN_CHARS) {
+            hideLiveBar();
+            return;
+        }
+        setPulse('connecting');
+        wsDebounceTimer = setTimeout(function () {
+            wsSend(text);
+        }, WS_DEBOUNCE_MS);
+    });
+
+    /* Hide live bar when switching away from text tab */
+    tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () {
+            if (tab.getAttribute('data-tab') !== 'text') {
+                hideLiveBar();
+            }
+        });
+    });
+
+    // Start WebSocket connection
+    wsConnect();
+
+
     // ═══════════════════════════════════════════════════════════════════════════
     //  TEXT ANALYSIS
     // ═══════════════════════════════════════════════════════════════════════════
