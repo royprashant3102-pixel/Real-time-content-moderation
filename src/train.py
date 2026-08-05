@@ -18,11 +18,11 @@ import torch
 import numpy as np
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
-NUM_EPOCHS = 4
+NUM_EPOCHS = 6
 BATCH_SIZE = 16
 LEARNING_RATE = 2e-5
 WEIGHT_DECAY = 0.01
-WARMUP_RATIO = 0.1            # 10% of total steps for warmup (better than fixed steps)
+WARMUP_RATIO = 0.15           # 15% of total steps for warmup (more data needs smoother start)
 MAX_SAMPLES = 30_000           # Passed to data.prepare_data()
 MODEL_NAME = "distilbert-base-multilingual-cased"   # Multilingual (104 languages)
 NUM_LABELS = 2

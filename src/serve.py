@@ -186,19 +186,82 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
 
 EXPLICIT_PROFANITY_PATTERN = re.compile(
     r"\b("
-    r"chutiya|chutiye|chut|chuto|bhosdike|bhosdika|bhosdi|bsdk|madarchod|maderchod|maderchodh|mc|bc|"
-    r"bhenchod|behenchod|bhenchode|gaand|gand|gandmara|harami|randi|kamina|kutta|chodna|loda|lauda|laude|bhosda|"
-    r"fuck|fucking|fucker|fck|shit|bitch|asshole|bastard|cunt|dick|pussy|slut|whore|"
-    r"nigger|nigga|faggot|retard"
+    # ── Hindi / Hindustani profanity ─────────────────────────────────────────
+    r"chutiya|chutiye|chut|chuto|"
+    r"bhosdike|bhosdika|bhosdiki|bhosdi|bsdk|"
+    r"madarchod|maderchod|maderchodh|"
+    r"behenchod|bhenchod|bhenchode|bhen ke lode|"
+    r"betichod|beti ?chod|betichode|"
+    r"gaand|gand|gandmara|gandu|gaandu|gandoo|"
+    r"harami|haramzada|haramzadi|haramkhor|"
+    r"randi|randwa|randi ?baaz|"
+    r"kamina|kaminey|kameena|"
+    r"kutta|kutte|kutiya|"
+    r"suar|suwar|suarki|"
+    r"chodna|chod|"
+    r"loda|lauda|laude|lund|"
+    r"bhosda|"
+    r"sala|saala|saale|sali|saali|"
+    r"hijra|hijda|"
+    r"bhadwa|bhadwe|bhadwi|"
+    r"madar|"
+    # ── English profanity ────────────────────────────────────────────────────
+    r"fuck|fucking|fucker|fck|fucked|motherfucker|"
+    r"shit|shithead|bullshit|"
+    r"bitch|bitches|"
+    r"asshole|bastard|cunt|dick|pussy|slut|whore|"
+    r"nigger|nigga|faggot|retard|"
+    r"cock|cocksucker|"
+    r"wanker|twat|prick"
+    r")\b",
+    re.IGNORECASE
+)
+
+
+# ── Safe / friendly-context words (Hindi + Hinglish + English) ───────────────
+# When these words appear in text with NO explicit toxic match, the model's high
+# score is almost certainly a false positive (it was trained on English only and
+# cannot correctly evaluate neutral transliterated Hindi).
+SAFE_CONTEXT_PATTERN = re.compile(
+    r"\b("
+    # Friendly address / relationship words
+    r"bhai|bhaiya|didi|behen|yaar|dost|boss|guru|jaan|"
+    r"bro|sis|sir|madam|ji|sahib|sahab|"
+    # Greetings & common expressions
+    r"hi|hello|hey|hii|helo|hola|namaste|namaskar|"
+    r"shukriya|dhanyawad|meherbani|"
+    # Affirmatives / neutral filler
+    r"haan|nahi|kya|acha|achha|theek|thik|sahi|"
+    r"okay|ok|yes|no|sure|please|sorry|thanks|thank|"
+    # Common positive/neutral Hindi
+    r"accha|bilkul|zaroor|kal|aaj|abhi|phir|"
+    r"kitna|kaise|kaisa|kaisi|kidhar|kahan|"
+    r"mera|tera|apna|hamara|tumhara|unka|"
+    r"pyar|mohabbat|dil|khushi|mazaa|mast|"
+    r"good|great|nice|fine|well|cool|awesome|"
+    r"love|care|help|work|life|time|day|night"
     r")\b",
     re.IGNORECASE
 )
 
 
 def _apply_toxicity_boost(text: str, toxic_prob: float) -> tuple[float, float]:
-    """Hybrid moderation logic: If explicit profanity/slurs are present, ensure toxicity >= 0.965."""
-    if EXPLICIT_PROFANITY_PATTERN.search(text):
+    """Hybrid moderation logic:
+    - Explicit profanity/slurs found  → force toxicity >= 96.5%.
+    - No toxic words found BUT safe/friendly Hindi-Hinglish context words present
+      AND model score is high → dampen (suppress false-positives on Hindi text
+      the model was never trained on).
+    """
+    has_toxic_word = bool(EXPLICIT_PROFANITY_PATTERN.search(text))
+
+    if has_toxic_word:
+        # Hard boost: explicit slur/profanity detected
         toxic_prob = max(toxic_prob, 0.965)
+    elif toxic_prob > 0.50 and SAFE_CONTEXT_PATTERN.search(text):
+        # False-positive guard: friendly Hindi/Hinglish words present, no slur.
+        # Suppress the model's confused score down to clearly non-toxic.
+        toxic_prob = min(toxic_prob, 0.12)
+
     non_toxic_prob = 1.0 - toxic_prob
     return round(non_toxic_prob, 4), round(toxic_prob, 4)
 
