@@ -251,6 +251,8 @@ def _apply_toxicity_boost(text: str, toxic_prob: float) -> tuple[float, float]:
     - No toxic words found BUT safe/friendly Hindi-Hinglish context words present
       AND model score is high → dampen (suppress false-positives on Hindi text
       the model was never trained on).
+    - For very short texts composed entirely of common/safe words, dampen
+      aggressively to near-zero.
     """
     has_toxic_word = bool(EXPLICIT_PROFANITY_PATTERN.search(text))
 
@@ -258,9 +260,19 @@ def _apply_toxicity_boost(text: str, toxic_prob: float) -> tuple[float, float]:
         # Hard boost: explicit slur/profanity detected
         toxic_prob = max(toxic_prob, 0.965)
     elif toxic_prob > 0.50 and SAFE_CONTEXT_PATTERN.search(text):
-        # False-positive guard: friendly Hindi/Hinglish words present, no slur.
-        # Suppress the model's confused score down to clearly non-toxic.
-        toxic_prob = min(toxic_prob, 0.12)
+        # False-positive guard: friendly/safe context words present, no slur.
+        # For short texts (≤10 words) where most words are safe/common,
+        # suppress aggressively — these are almost always greetings/chat.
+        words = text.split()
+        safe_count = sum(1 for w in words if SAFE_CONTEXT_PATTERN.fullmatch(w))
+        safe_ratio = safe_count / max(len(words), 1)
+
+        if len(words) <= 10 and safe_ratio >= 0.5:
+            # Short, mostly-safe text (e.g. "hello buddy", "hi bhai kaise ho")
+            toxic_prob = min(toxic_prob, 0.002)
+        else:
+            # Longer text with some safe context — mild dampening
+            toxic_prob = min(toxic_prob, 0.02)
 
     non_toxic_prob = 1.0 - toxic_prob
     return round(non_toxic_prob, 4), round(toxic_prob, 4)
