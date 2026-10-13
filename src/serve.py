@@ -22,7 +22,8 @@ from typing import Optional
 import numpy as np
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
-MAX_SEQ_LENGTH = 64               # ⚡ Reduced from 128 → ~35% faster inference
+MAX_SEQ_LENGTH = 128              # Must match training MAX_SEQ_LENGTH in data.py
+TOXIC_THRESHOLD = 0.65            # Require higher confidence to flag as toxic (reduces false positives)
 MAX_TEXT_LENGTH = 50_000          # ~10,000 words
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 CHUNK_SIZE = 400                  # chars per chunk (~100 tokens)
@@ -310,7 +311,7 @@ def _predict_single(text: str) -> dict:
     probs = _softmax(logits)
     
     non_toxic_prob, toxic_prob = _apply_toxicity_boost(text, float(probs[1]))
-    pred_label = 1 if toxic_prob >= 0.5 else 0
+    pred_label = 1 if toxic_prob >= TOXIC_THRESHOLD else 0
     score = toxic_prob if pred_label == 1 else non_toxic_prob
 
     return {
@@ -352,7 +353,7 @@ def _predict_base_single(text: str) -> dict:
     probs = _softmax(logits)
     
     non_toxic_prob, toxic_prob = _apply_toxicity_boost(text, float(probs[1]))
-    pred_label = 1 if toxic_prob >= 0.5 else 0
+    pred_label = 1 if toxic_prob >= TOXIC_THRESHOLD else 0
     score = toxic_prob if pred_label == 1 else non_toxic_prob
     elapsed_ms = (time.time() - t0) * 1000
 
@@ -394,7 +395,7 @@ def _predict_batch(texts: list[str]) -> list[dict]:
     results = []
     for text, probs in zip(texts, all_probs):
         non_toxic_prob, toxic_prob = _apply_toxicity_boost(text, float(probs[1]))
-        pred_label = 1 if toxic_prob >= 0.5 else 0
+        pred_label = 1 if toxic_prob >= TOXIC_THRESHOLD else 0
         score = toxic_prob if pred_label == 1 else non_toxic_prob
         results.append({
             "label": LABELS[pred_label],

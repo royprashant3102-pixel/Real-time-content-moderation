@@ -308,7 +308,73 @@ def load_hinglish_dataset(max_samples: int = MAX_HINGLISH_SAMPLES):
         "bh@dwa",
     ]
     
+    # ── Short non-toxic texts (1-4 words) ──────────────────────────────────
+    # CRITICAL: The model must learn that short casual text is NOT toxic.
+    # Without these, it defaults to "toxic" for any short unfamiliar input.
+    short_non_toxic = [
+        # Single-word greetings
+        "hello", "hi", "hey", "howdy", "greetings", "welcome",
+        "namaste", "namaskar", "salaam", "hola", "bonjour",
+        # Two-word greetings
+        "hello buddy", "hi there", "hey friend", "hello sir",
+        "hi madam", "hey bro", "hello everyone", "hi guys",
+        "hello world", "hey man", "hi dear", "hello folks",
+        "hey dude", "hi boss", "hello mate", "hey pal",
+        "hello stranger", "hi neighbor", "hey team", "hello class",
+        # Time-based greetings
+        "good morning", "good night", "good evening", "good afternoon",
+        "good day", "morning everyone", "night buddy", "evening sir",
+        "good morning sir", "good night bro", "good evening madam",
+        "morning bhai", "good morning dost", "good night yaar",
+        # Short casual responses
+        "ok", "okay", "sure", "yes", "no", "yep", "nope", "yeah",
+        "thanks", "thank you", "thx", "ty", "thanks buddy", "thanks bro",
+        "fine", "good", "great", "nice", "cool", "awesome", "perfect",
+        "agreed", "understood", "noted", "done", "right", "correct",
+        "absolutely", "definitely", "certainly", "exactly", "indeed",
+        "sounds good", "no problem", "no worries", "all good",
+        "you're welcome", "my pleasure", "anytime", "no issues",
+        "take care", "see you", "bye", "goodbye", "later", "cheers",
+        "see you later", "catch you later", "bye bye", "talk soon",
+        # Short questions
+        "how are you", "what's up", "how's it going", "you okay",
+        "what happened", "where are you", "when is it", "who said that",
+        "really", "seriously", "is that so", "are you sure",
+        "what do you think", "how was your day", "you there",
+        "can you help", "need help", "any updates", "what time",
+        # Short positive statements
+        "well done", "good job", "nice work", "keep going",
+        "love it", "amazing work", "brilliant", "fantastic",
+        "congrats", "congratulations", "happy birthday", "best wishes",
+        "good luck", "all the best", "take care buddy",
+        "proud of you", "well played", "you rock", "respect",
+        # Short Hinglish greetings and responses
+        "hello bhai", "hi yaar", "hey dost", "hello ji",
+        "kya haal hai", "kaise ho", "sab theek", "theek hai",
+        "accha hai", "bilkul sahi", "haan bhai", "nahi yaar",
+        "chalega", "chal theek hai", "haan ji", "zaroor",
+        "shukriya", "dhanyavaad", "meherbani", "acha ok",
+        "hello dost kaise ho", "hi bhai sab theek",
+        "namaste ji", "pranam", "sat sri akal",
+        "kya chal raha hai", "sab badhiya", "mast hai",
+        "theek thaak", "bas chal raha hai", "sab kushal",
+        # Common internet chat
+        "lol", "haha", "hehe", "lmao", "rofl", "xd",
+        "omg", "wow", "ooh", "ahh", "yay", "woah",
+        "gg", "wp", "glhf", "brb", "afk", "imo",
+        "same", "mood", "true", "facts", "valid point",
+        "interesting", "makes sense", "fair enough", "good point",
+        # Devanagari short non-toxic
+        "नमस्ते", "प्रणाम", "धन्यवाद", "शुक्रिया",
+        "ठीक है", "अच्छा", "हाँ", "नहीं",
+        "बहुत अच्छा", "बढ़िया", "शाबाश",
+        "कैसे हो", "सब ठीक", "क्या हाल है",
+    ]
+
     hinglish_non_toxic = [
+        # ── Short non-toxic (from above, included in final list) ──
+        *short_non_toxic,
+        
         # ── Polite conversation ──
         "aap bahut acche insaan ho",
         "mujhe aapki baat bahut pasand aayi",
@@ -595,16 +661,34 @@ def prepare_data(max_samples: int = MAX_SAMPLES):
     print("\n── Loading Hinglish/Hindi Data ──")
     hi_texts, hi_labels = load_hinglish_dataset(MAX_HINGLISH_SAMPLES)
     
-    # 3. Merge and shuffle
+    # 3. Merge and balance classes
     all_texts = en_texts + hi_texts
     all_labels = en_labels + hi_labels
     
+    # Balance dataset: downsample non-toxic to 2x toxic count
+    # This prevents the model from being trigger-happy due to extreme imbalance
+    toxic_pairs = [(t, l) for t, l in zip(all_texts, all_labels) if l == 1]
+    nontoxic_pairs = [(t, l) for t, l in zip(all_texts, all_labels) if l == 0]
+    
+    max_nontoxic = min(len(nontoxic_pairs), 2 * len(toxic_pairs))
+    np.random.seed(RANDOM_SEED)
+    nontoxic_indices = np.random.choice(len(nontoxic_pairs), size=max_nontoxic, replace=False)
+    nontoxic_pairs = [nontoxic_pairs[i] for i in nontoxic_indices]
+    
+    balanced_pairs = toxic_pairs + nontoxic_pairs
+    all_texts = [p[0] for p in balanced_pairs]
+    all_labels = [p[1] for p in balanced_pairs]
+    
+    print(f"\n⚖️  Dataset Balancing:")
+    print(f"   Toxic: {len(toxic_pairs)} | Non-toxic: {len(nontoxic_pairs)} (capped at 2x toxic)")
+    
+    # Shuffle
     np.random.seed(RANDOM_SEED)
     indices = np.random.permutation(len(all_texts))
     all_texts = [all_texts[i] for i in indices]
     all_labels = [all_labels[i] for i in indices]
     
-    print(f"\n📊 Merged dataset: {len(all_texts)} total samples")
+    print(f"\n📊 Final dataset: {len(all_texts)} total samples")
     print(f"   Toxic: {sum(all_labels)} | Non-toxic: {len(all_labels) - sum(all_labels)}")
     
     # 4. Tokenize and split
