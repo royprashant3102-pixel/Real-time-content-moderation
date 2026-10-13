@@ -1,12 +1,12 @@
 """
 train.py — Fine-tune multilingual DistilBERT for binary toxicity classification.
 
-Improvements over v1:
+Improvements:
   - Multilingual model: distilbert-base-multilingual-cased (104 languages)
   - 30K+ samples (English + Hinglish/Hindi)
-  - 4 epochs for better convergence
+  - 6 epochs for better convergence
   - Class-weight balancing via weighted CrossEntropyLoss
-  - Better warmup scheduling for larger dataset
+  - 15% warmup scheduling for larger dataset
 
 Designed to run on CPU-only machines.
 Config variables at top for easy tuning.
@@ -22,7 +22,7 @@ NUM_EPOCHS = 6
 BATCH_SIZE = 16
 LEARNING_RATE = 2e-5
 WEIGHT_DECAY = 0.01
-WARMUP_RATIO = 0.15           # 15% of total steps for warmup (more data needs smoother start)
+WARMUP_RATIO = 0.15           # 15% of total steps for warmup (smoother convergence on imbalanced data)
 MAX_SAMPLES = 30_000           # Passed to data.prepare_data()
 MODEL_NAME = "distilbert-base-multilingual-cased"   # Multilingual (104 languages)
 NUM_LABELS = 2
@@ -92,14 +92,6 @@ def compute_class_weights(train_dataset):
     return torch.FloatTensor(weights)
 
 
-class WeightedTrainer(torch.nn.Module):
-    """Custom Trainer subclass that uses weighted CrossEntropyLoss
-    to handle class imbalance. The minority class (toxic) gets a higher
-    weight so the model is penalized more for missing toxic content.
-    """
-    pass  # We'll use the HuggingFace Trainer's compute_loss override
-
-
 def train():
     """Fine-tune multilingual DistilBERT with class-weight balancing and save the model."""
     from transformers import (
@@ -118,7 +110,7 @@ def train():
     # ── 2. Compute class weights ─────────────────────────────────────────────
     class_weights = compute_class_weights(splits["train"])
 
-    # ── 3. Load pre-trained model ────────────────────────────────────────────
+    # ── 3. Load pre-trained model ────────────────────────────────────
     print(f"\n── Step 2: Loading pre-trained {MODEL_NAME} ──")
     try:
         model = AutoModelForSequenceClassification.from_pretrained(
@@ -159,7 +151,7 @@ def train():
         per_device_eval_batch_size=BATCH_SIZE * 2,
         learning_rate=LEARNING_RATE,
         weight_decay=WEIGHT_DECAY,
-        warmup_ratio=WARMUP_RATIO,         # 10% warmup instead of fixed steps
+        warmup_ratio=WARMUP_RATIO,         # 15% warmup for smoother convergence
         eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,

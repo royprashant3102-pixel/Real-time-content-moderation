@@ -31,18 +31,19 @@ import numpy as np
 
 def clean_text(text: str) -> str:
     """Text cleaning that preserves multilingual characters (Hindi, Devanagari, etc.).
-    Only removes URLs, excessive whitespace, and normalizes spacing.
+    Removes URLs, HTML tags, normalizes whitespace, and lowercases for consistent casing.
     """
     text = text.strip()
     text = re.sub(r"http\S+|www\.\S+", "", text)        # remove URLs
-    text = re.sub(r"<[^>]+>", "", text)                   # remove HTML tags
-    text = re.sub(r"\s+", " ", text).strip()              # normalize whitespace
+    text = re.sub(r"<[^>]+>", "", text)                 # remove HTML tags
+    text = re.sub(r"\s+", " ", text).strip().lower()    # normalize whitespace & lowercase
     return text
 
 
 def load_dataset_safe(max_samples: int = MAX_SAMPLES):
     """
     Try to load 'google/civil_comments' from Hugging Face.
+    Shuffles and samples across the dataset instead of naive first N rows.
     Falls back to a synthetic dataset if download fails.
 
     Returns: (texts, labels) as lists.
@@ -52,9 +53,10 @@ def load_dataset_safe(max_samples: int = MAX_SAMPLES):
         print(f"⏳ Loading civil_comments dataset ({max_samples} samples) from Hugging Face...")
         ds = load_dataset(
             "google/civil_comments",
-            split=f"train[:{max_samples}]",
-            trust_remote_code=True,
+            split="train",
         )
+        # Shuffle with seed and take max_samples
+        ds = ds.shuffle(seed=RANDOM_SEED).select(range(min(len(ds), max_samples)))
         texts = [clean_text(row["text"]) for row in ds]
         labels = [1 if row["toxicity"] >= TOXICITY_THRESHOLD else 0 for row in ds]
         print(f"✅ Loaded {len(texts)} English samples from civil_comments.")
@@ -67,29 +69,42 @@ def load_dataset_safe(max_samples: int = MAX_SAMPLES):
 
 
 def load_hinglish_dataset(max_samples: int = MAX_HINGLISH_SAMPLES):
-    """Load Hindi/Hinglish toxicity data from HuggingFace + curated samples.
+    """Load Hindi/Hinglish toxicity data from HuggingFace + deduplicated curated samples.
+    
+    Fixes data leakage: Curated templates are strictly deduplicated and never repeated.
+    Real multilingual samples are loaded from textdetox (both Hinglish 'hin' and Hindi 'hi').
     
     Returns: (texts, labels) as lists.
     """
     texts, labels = [], []
     
-    # ── Part 1: Try loading Hindi split from HuggingFace ──
+    # ── Part 1: Try loading real Hindi & Hinglish splits from HuggingFace ──
     hf_loaded = 0
     try:
         from datasets import load_dataset
-        print(f"⏳ Loading Hindi toxicity dataset from HuggingFace...")
-        ds = load_dataset(
+        print(f"⏳ Loading Hindi/Hinglish toxicity datasets from HuggingFace...")
+        # Load Hinglish (Romanized Hindi) split
+        ds_hin = load_dataset(
             "textdetox/multilingual_toxicity_dataset",
-            split=f"hi[:{max_samples // 2}]",
-            trust_remote_code=True,
+            split=f"hin[:{max_samples // 2}]",
         )
-        for row in ds:
+        for row in ds_hin:
             texts.append(clean_text(row["text"]))
             labels.append(int(row["toxic"]))
+
+        # Load Hindi (Devanagari) split
+        ds_hi = load_dataset(
+            "textdetox/multilingual_toxicity_dataset",
+            split=f"hi[:{max_samples // 2}]",
+        )
+        for row in ds_hi:
+            texts.append(clean_text(row["text"]))
+            labels.append(int(row["toxic"]))
+
         hf_loaded = len(texts)
-        print(f"✅ Loaded {hf_loaded} Hindi samples from HuggingFace.")
+        print(f"✅ Loaded {hf_loaded} real Hindi/Hinglish samples from HuggingFace.")
     except Exception as e:
-        print(f"⚠️  Failed to load Hindi dataset from HuggingFace: {e}")
+        print(f"⚠️  Failed to load textdetox dataset from HuggingFace: {e}")
     
     # ── Part 2: Curated Hinglish toxic/non-toxic examples ──
     # These cover transliterated Hindi profanity, slurs, and common Hinglish toxic patterns
@@ -518,36 +533,18 @@ def load_hinglish_dataset(max_samples: int = MAX_HINGLISH_SAMPLES):
                 if combo not in augmented_toxic and len(combo) > len(slur):
                     augmented_toxic.append(combo)
     
-    # Deduplicate
-    augmented_toxic = list(dict.fromkeys(augmented_toxic))
-    augmented_non_toxic = list(dict.fromkeys(augmented_non_toxic))
-    
-    # Add curated samples (replicate if needed to fill target)
-    target_per_class = max(max_samples // 3, 500)
-    
-    curated_toxic = []
-    curated_non_toxic = []
-    
-    while len(curated_toxic) < target_per_class:
-        for t in augmented_toxic:
-            curated_toxic.append(t)
-            if len(curated_toxic) >= target_per_class:
-                break
-    
-    while len(curated_non_toxic) < target_per_class:
-        for t in augmented_non_toxic:
-            curated_non_toxic.append(t)
-            if len(curated_non_toxic) >= target_per_class:
-                break
+    # Deduplicate strictly - zero replication to prevent train/val/test data leakage
+    curated_toxic = list(dict.fromkeys(augmented_toxic))
+    curated_non_toxic = list(dict.fromkeys(augmented_non_toxic))
     
     texts.extend(curated_toxic)
     labels.extend([1] * len(curated_toxic))
     texts.extend(curated_non_toxic)
     labels.extend([0] * len(curated_non_toxic))
     
-    print(f"✅ Total Hinglish/Hindi samples: {len(texts)} ({hf_loaded} from HF + {len(curated_toxic) + len(curated_non_toxic)} curated)")
+    print(f"✅ Total Hinglish/Hindi samples: {len(texts)} ({hf_loaded} from HF + {len(curated_toxic) + len(curated_non_toxic)} unique curated)")
     print(f"   Toxic: {sum(labels)} | Non-toxic: {len(labels) - sum(labels)}")
-    print(f"   Unique toxic templates: {len(augmented_toxic)} | Unique non-toxic templates: {len(augmented_non_toxic)}")
+    print(f"   Unique toxic templates: {len(curated_toxic)} | Unique non-toxic templates: {len(curated_non_toxic)}")
     
     return texts, labels
 

@@ -14,6 +14,9 @@ import sys
 import io
 import re
 import time
+import socket
+import ipaddress
+import urllib.parse
 from functools import lru_cache
 import datetime
 from pathlib import Path
@@ -39,6 +42,7 @@ PORT = int(os.environ.get("PORT", 7860))  # 7860 for HF Spaces, 8000 locally
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -59,6 +63,8 @@ class PredictionResponse(BaseModel):
     score: float
     toxic: bool
     confidence: dict
+    rule_flagged: bool = False
+    rule_matches: list[str] = []
 
 
 class ChunkResult(BaseModel):
@@ -68,6 +74,8 @@ class ChunkResult(BaseModel):
     score: float
     toxic: bool
     confidence: dict
+    rule_flagged: bool = False
+    rule_matches: list[str] = []
 
 
 class BulkPredictionResponse(BaseModel):
@@ -89,6 +97,8 @@ class ModelPredictionResult(BaseModel):
     toxic: bool
     confidence: dict
     latency_ms: float
+    rule_flagged: bool = False
+    rule_matches: list[str] = []
 
 
 class ComparePredictionResponse(BaseModel):
@@ -167,9 +177,17 @@ _start_time = datetime.datetime.now(datetime.timezone.utc)
 
 app = FastAPI(
     title="Content Moderation API",
-    description="Real-time toxicity detection using ONNX-optimized DistilBERT",
+    description="Real-time toxicity detection using ONNX-optimized multilingual DistilBERT",
     version=_APP_VERSION,
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -219,64 +237,17 @@ EXPLICIT_PROFANITY_PATTERN = re.compile(
 )
 
 
-# ── Safe / friendly-context words (Hindi + Hinglish + English) ───────────────
-# When these words appear in text with NO explicit toxic match, the model's high
-# score is almost certainly a false positive (it was trained on English only and
-# cannot correctly evaluate neutral transliterated Hindi).
-SAFE_CONTEXT_PATTERN = re.compile(
-    r"\b("
-    # Friendly address / relationship words
-    r"bhai|bhaiya|didi|behen|yaar|dost|boss|guru|jaan|"
-    r"bro|sis|sir|madam|ji|sahib|sahab|"
-    # Greetings & common expressions
-    r"hi|hello|hey|hii|helo|hola|namaste|namaskar|"
-    r"shukriya|dhanyawad|meherbani|"
-    # Affirmatives / neutral filler
-    r"haan|nahi|kya|acha|achha|theek|thik|sahi|"
-    r"okay|ok|yes|no|sure|please|sorry|thanks|thank|"
-    # Common positive/neutral Hindi
-    r"accha|bilkul|zaroor|kal|aaj|abhi|phir|"
-    r"kitna|kaise|kaisa|kaisi|kidhar|kahan|"
-    r"mera|tera|apna|hamara|tumhara|unka|"
-    r"pyar|mohabbat|dil|khushi|mazaa|mast|"
-    r"good|great|nice|fine|well|cool|awesome|"
-    r"love|care|help|work|life|time|day|night"
-    r")\b",
-    re.IGNORECASE
-)
-
-
-def _apply_toxicity_boost(text: str, toxic_prob: float) -> tuple[float, float]:
-    """Hybrid moderation logic:
-    - Explicit profanity/slurs found  → force toxicity >= 96.5%.
-    - No toxic words found BUT safe/friendly Hindi-Hinglish context words present
-      AND model score is high → dampen (suppress false-positives on Hindi text
-      the model was never trained on).
-    - For very short texts composed entirely of common/safe words, dampen
-      aggressively to near-zero.
+# ── Rule-based explicit profanity matching ──────────────────────────────────
+def _check_rules(text: str) -> dict:
+    """Identify rule/profanity list matches as labeled metadata without
+    destructively overriding the machine learning model's calibrated score.
     """
-    has_toxic_word = bool(EXPLICIT_PROFANITY_PATTERN.search(text))
-
-    if has_toxic_word:
-        # Hard boost: explicit slur/profanity detected
-        toxic_prob = max(toxic_prob, 0.965)
-    elif toxic_prob > 0.50 and SAFE_CONTEXT_PATTERN.search(text):
-        # False-positive guard: friendly/safe context words present, no slur.
-        # For short texts (≤10 words) where most words are safe/common,
-        # suppress aggressively — these are almost always greetings/chat.
-        words = text.split()
-        safe_count = sum(1 for w in words if SAFE_CONTEXT_PATTERN.fullmatch(w))
-        safe_ratio = safe_count / max(len(words), 1)
-
-        if len(words) <= 10 and safe_ratio >= 0.5:
-            # Short, mostly-safe text (e.g. "hello buddy", "hi bhai kaise ho")
-            toxic_prob = min(toxic_prob, 0.002)
-        else:
-            # Longer text with some safe context — mild dampening
-            toxic_prob = min(toxic_prob, 0.02)
-
-    non_toxic_prob = 1.0 - toxic_prob
-    return round(non_toxic_prob, 4), round(toxic_prob, 4)
+    matches = EXPLICIT_PROFANITY_PATTERN.findall(text)
+    unique_matches = sorted(list({m.lower() for m in matches}))
+    return {
+        "rule_flagged": len(unique_matches) > 0,
+        "rule_matches": unique_matches,
+    }
 
 
 def _softmax(logits: np.ndarray) -> np.ndarray:
@@ -304,24 +275,28 @@ def _cached_tokenize(text: str):
 
 
 def _predict_single(text: str) -> dict:
-    """Run inference on a single text string. Returns raw result dict."""
+    """Run inference on a single text string. Returns raw result dict with calibrated model scores and rule metadata."""
     input_ids, attention_mask = _cached_tokenize(text)
     feed = {"input_ids": input_ids, "attention_mask": attention_mask}
     logits = _session.run(None, feed)[0][0]
     probs = _softmax(logits)
     
-    non_toxic_prob, toxic_prob = _apply_toxicity_boost(text, float(probs[1]))
+    non_toxic_prob = float(probs[0])
+    toxic_prob = float(probs[1])
     pred_label = 1 if toxic_prob >= TOXIC_THRESHOLD else 0
     score = toxic_prob if pred_label == 1 else non_toxic_prob
+    rule_info = _check_rules(text)
 
     return {
         "label": LABELS[pred_label],
         "score": round(score, 4),
         "toxic": pred_label == 1,
         "confidence": {
-            "non-toxic": non_toxic_prob,
-            "toxic": toxic_prob,
+            "non-toxic": round(non_toxic_prob, 4),
+            "toxic": round(toxic_prob, 4),
         },
+        "rule_flagged": rule_info["rule_flagged"],
+        "rule_matches": rule_info["rule_matches"],
     }
 
 
@@ -345,16 +320,18 @@ def _predict_base_single(text: str) -> dict:
         text,
         padding=True,
         truncation=True,
-        max_length=64,
+        max_length=MAX_SEQ_LENGTH,
         return_tensors="pt"
     )
     outputs = model(**inputs)
     logits = outputs.logits[0].detach().numpy()
     probs = _softmax(logits)
     
-    non_toxic_prob, toxic_prob = _apply_toxicity_boost(text, float(probs[1]))
+    non_toxic_prob = float(probs[0])
+    toxic_prob = float(probs[1])
     pred_label = 1 if toxic_prob >= TOXIC_THRESHOLD else 0
     score = toxic_prob if pred_label == 1 else non_toxic_prob
+    rule_info = _check_rules(text)
     elapsed_ms = (time.time() - t0) * 1000
 
     return {
@@ -362,10 +339,12 @@ def _predict_base_single(text: str) -> dict:
         "score": round(score, 4),
         "toxic": pred_label == 1,
         "confidence": {
-            "non-toxic": non_toxic_prob,
-            "toxic": toxic_prob,
+            "non-toxic": round(non_toxic_prob, 4),
+            "toxic": round(toxic_prob, 4),
         },
         "latency_ms": round(elapsed_ms, 2),
+        "rule_flagged": rule_info["rule_flagged"],
+        "rule_matches": rule_info["rule_matches"],
     }
 
 
@@ -394,17 +373,21 @@ def _predict_batch(texts: list[str]) -> list[dict]:
 
     results = []
     for text, probs in zip(texts, all_probs):
-        non_toxic_prob, toxic_prob = _apply_toxicity_boost(text, float(probs[1]))
+        non_toxic_prob = float(probs[0])
+        toxic_prob = float(probs[1])
         pred_label = 1 if toxic_prob >= TOXIC_THRESHOLD else 0
         score = toxic_prob if pred_label == 1 else non_toxic_prob
+        rule_info = _check_rules(text)
         results.append({
             "label": LABELS[pred_label],
             "score": round(score, 4),
             "toxic": pred_label == 1,
             "confidence": {
-                "non-toxic": non_toxic_prob,
-                "toxic": toxic_prob,
+                "non-toxic": round(non_toxic_prob, 4),
+                "toxic": round(toxic_prob, 4),
             },
+            "rule_flagged": rule_info["rule_flagged"],
+            "rule_matches": rule_info["rule_matches"],
         })
     return results
 
@@ -462,7 +445,7 @@ def _predict_chunks(text: str, source: str = "text", source_name: str = "manual 
     toxic_scores = [c.confidence["toxic"] for c in chunk_results]
     max_toxic = max(toxic_scores)
     max_safe = 1 - max_toxic
-    overall_toxic = max_toxic > 0.5
+    overall_toxic = max_toxic >= TOXIC_THRESHOLD
     toxic_count = sum(1 for c in chunk_results if c.toxic)
 
     return BulkPredictionResponse(
@@ -601,18 +584,65 @@ async def predict_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
 
+def _validate_safe_url(url_str: str) -> str:
+    """Validate URL and block SSRF targets (private IPs, localhost, cloud metadata)."""
+    parsed = urllib.parse.urlparse(url_str)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Only HTTP and HTTPS URLs are permitted.")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise HTTPException(status_code=400, detail="Invalid URL hostname.")
+
+    # Block loopback, link-local, and cloud metadata hostnames
+    blocked_hosts = {"localhost", "metadata.google.internal", "instance-data", "169.254.169.254"}
+    if hostname.lower() in blocked_hosts:
+        raise HTTPException(
+            status_code=400,
+            detail="Access to internal hosts or metadata services is forbidden (SSRF protection)."
+        )
+
+    # Resolve IP addresses and inspect against private/loopback/reserved ranges
+    try:
+        resolved_ips = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        raise HTTPException(status_code=400, detail=f"Cannot resolve hostname: {hostname}")
+
+    for addr in resolved_ips:
+        ip_str = addr[4][0]
+        try:
+            ip_obj = ipaddress.ip_address(ip_str)
+            if (
+                ip_obj.is_private
+                or ip_obj.is_loopback
+                or ip_obj.is_link_local
+                or ip_obj.is_reserved
+                or ip_obj.is_multicast
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Access to private/local network address ({ip_str}) is forbidden (SSRF protection)."
+                )
+        except ValueError:
+            pass
+
+    return url_str
+
+
 @app.post("/predict/url", response_model=BulkPredictionResponse)
 async def predict_url(request: URLRequest):
-    """Scrape a URL and analyze the extracted text for toxicity."""
+    """Scrape a URL and analyze the extracted text for toxicity with SSRF protection."""
     if _session is None or _tokenizer is None:
         raise HTTPException(status_code=503, detail="Model not loaded yet")
 
     import httpx as hx
 
-    # Basic URL validation
+    # Basic URL validation and SSRF filtering
     url = request.url.strip()
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
+
+    _validate_safe_url(url)
 
     # Fetch the page
     try:
