@@ -8,35 +8,28 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <link rel="stylesheet" href="/static/style.css">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
 </head>
 <body>
 
-    <!-- Ambient background blobs -->
-    <div class="ambient" aria-hidden="true">
-        <div class="blob blob-1"></div>
-        <div class="blob blob-2"></div>
-        <div class="blob blob-3"></div>
-    </div>
-
     <nav class="topbar">
         <div class="topbar-inner">
             <div class="topbar-left">
                 <span class="topbar-logo">
-                    <span class="logo-icon">🛡️</span>
-                    <span class="logo-text">moderator</span>
+                    <span class="logo-icon">▧</span>
+                    <span class="logo-text">case-file // moderator</span>
                 </span>
-                <span class="topbar-badge">v2.0</span>
+                <span class="topbar-badge">rev.02</span>
             </div>
             <div class="topbar-right">
                 <span class="status-dot" id="status-dot"></span>
                 <span class="status-text" id="status-text">Checking…</span>
                 <a href="/docs" class="topbar-link" target="_blank">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                    API Docs
+                    Docs
                 </a>
             </div>
         </div>
@@ -46,13 +39,13 @@
         <header class="hero">
             <div class="hero-eyebrow">
                 <span class="eyebrow-dot"></span>
-                Real-time NLP · DistilBERT · ONNX Runtime
+                case no. 0x7F3A — DistilBERT / ONNX Runtime
             </div>
-            <h1>Does your text<br><span class="hero-highlight">cross the line</span>?</h1>
+            <h1>Content Inspection<br>Console<span class="cursor-blink"></span></h1>
             <p class="hero-sub">
-                Analyze text, uploaded files, or any URL for toxicity.
-                Our model reads it in <strong>under 50ms per chunk</strong>
-                and breaks down exactly where the problems are.
+                Submit text, a file, or a URL for toxicity analysis. Model returns a
+                verdict in <strong>under 50ms per chunk</strong>, with a full
+                confidence breakdown on request.
             </p>
         </header>
 
@@ -358,10 +351,10 @@
                 <div class="compare-container" style="display: flex; gap: 1.5rem; flex-wrap: wrap; margin-top: 1rem; width: 100%;">
                     <!-- Custom Model Card -->
                     <div class="result-card" id="result-card-compare-custom" style="flex: 1; min-width: 300px; margin: 0;">
-                        <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--fg-muted); display: flex; align-items: center; gap: 0.5rem;">
-                            <span style="font-size: 1.3rem;">⚡</span> Fine-Tuned ONNX (INT8 Quantized)
+                        <h3 style="margin-top: 0; font-size: 0.78rem; color: var(--ink-soft); display: flex; align-items: center; gap: 0.5rem; text-transform: uppercase; letter-spacing: 0.04em;">
+                            <span style="font-size: 1rem;">⚡</span> Fine-Tuned ONNX (INT8 Quantized)
                         </h3>
-                        <hr style="border: 0; height: 1px; background: rgba(255,255,255,0.08); margin: 0.75rem 0 1.25rem 0;">
+                        <hr style="border: 0; height: 1px; background: var(--line-soft); margin: 0.75rem 0 1.25rem 0;">
                         <div class="gauge-section">
                             <div class="gauge" id="gauge-compare-custom">
                                 <svg class="gauge-svg" viewBox="0 0 200 120">
@@ -408,10 +401,10 @@
 
                     <!-- Base Model Card -->
                     <div class="result-card" id="result-card-compare-base" style="flex: 1; min-width: 300px; margin: 0;">
-                        <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--fg-muted); display: flex; align-items: center; gap: 0.5rem;">
-                            <span style="font-size: 1.3rem;">🧠</span> PyTorch Model (FP32 Full)
+                        <h3 style="margin-top: 0; font-size: 0.78rem; color: var(--ink-soft); display: flex; align-items: center; gap: 0.5rem; text-transform: uppercase; letter-spacing: 0.04em;">
+                            <span style="font-size: 1rem;">🧠</span> PyTorch Model (FP32 Full)
                         </h3>
-                        <hr style="border: 0; height: 1px; background: rgba(255,255,255,0.08); margin: 0.75rem 0 1.25rem 0;">
+                        <hr style="border: 0; height: 1px; background: var(--line-soft); margin: 0.75rem 0 1.25rem 0;">
                         <div class="gauge-section">
                             <div class="gauge" id="gauge-compare-base">
                                 <svg class="gauge-svg" viewBox="0 0 200 120">
@@ -467,7 +460,7 @@
 
         <section class="pipeline">
             <div class="pipeline-header">
-                <h2>Under the hood</h2>
+                <h2>// procedure log</h2>
                 <p class="pipeline-sub">Three steps, one model, sub-50ms per chunk.</p>
             </div>
             <div class="pipeline-steps">
@@ -519,7 +512,7 @@
 
     <footer class="footer">
         <div class="footer-inner">
-            <p class="footer-left">Built by <strong>Prashant Roy</strong> — a portfolio project, not a product.</p>
+            <p class="footer-left">Filed by <strong>Prashant Roy</strong> — portfolio project, not a product.</p>
             <p class="footer-right">
                 <code>distilbert-base-uncased</code> · <code>google/civil_comments</code> · ONNX Runtime
             </p>
