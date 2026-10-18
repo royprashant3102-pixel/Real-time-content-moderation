@@ -138,9 +138,11 @@ async def lifespan(app: FastAPI):
 
     try:
         # ⚡ OPTIMIZATION 2: ONNX session options for max CPU performance
+        # Thread counts kept low — low-memory hosts (e.g. Render free tier, 512MB)
+        # pay per-thread stack/buffer overhead that adds up fast on a small instance.
         opts = ort.SessionOptions()
-        opts.intra_op_num_threads = 4          # parallel ops within a layer
-        opts.inter_op_num_threads = 2          # parallel ops across layers
+        opts.intra_op_num_threads = int(os.environ.get("ORT_INTRA_THREADS", "2"))
+        opts.inter_op_num_threads = int(os.environ.get("ORT_INTER_THREADS", "1"))
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         _session = ort.InferenceSession(
@@ -256,7 +258,7 @@ def _softmax(logits: np.ndarray) -> np.ndarray:
     return exp / exp.sum(axis=-1, keepdims=True)
 
 
-@lru_cache(maxsize=512)
+@lru_cache(maxsize=128)
 def _cached_tokenize(text: str):
     """⚡ OPTIMIZATION 3: Cache tokenized inputs for repeated texts.
     Returns a tuple of (input_ids, attention_mask) as numpy arrays.
@@ -475,6 +477,7 @@ def _extract_text_from_file(filename: str, content: bytes) -> str:
         return content.decode("utf-8", errors="replace")
 
     elif ext == ".pdf":
+        import gc
         from PyPDF2 import PdfReader
         reader = PdfReader(io.BytesIO(content))
         pages = []
@@ -482,12 +485,19 @@ def _extract_text_from_file(filename: str, content: bytes) -> str:
             text = page.extract_text()
             if text:
                 pages.append(text)
-        return "\n\n".join(pages)
+        result = "\n\n".join(pages)
+        del reader, pages
+        gc.collect()
+        return result
 
     elif ext == ".docx":
+        import gc
         from docx import Document
         doc = Document(io.BytesIO(content))
-        return "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        result = "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        del doc
+        gc.collect()
+        return result
 
     else:
         raise ValueError(f"Unsupported file type: {ext}")
@@ -569,6 +579,8 @@ async def predict_file(file: UploadFile = File(...)):
         text = _extract_text_from_file(file.filename or "file", content)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
+    finally:
+        del content  # raw bytes no longer needed once text is extracted
 
     text = text.strip()
     if not text:
