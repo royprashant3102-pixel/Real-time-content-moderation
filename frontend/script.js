@@ -240,6 +240,10 @@
             try {
                 var data = JSON.parse(evt.data);
                 if (data.error) { return; }
+                // Discard stale responses: only render if it matches what's
+                // currently in the textarea (guards against out-of-order
+                // replies when onopen's immediate send races the debounced one).
+                if (textInput.value.trim() !== data.echo_text) { return; }
                 updateLiveBar(data);
             } catch (_) {}
         };

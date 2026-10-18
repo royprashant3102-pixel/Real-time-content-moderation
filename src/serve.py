@@ -775,6 +775,7 @@ async def ws_predict(websocket: WebSocket):
                     **result,
                     "latency_ms": latency_ms,
                     "char_count": len(stripped),
+                    "echo_text": stripped,
                 })
             except Exception as exc:
                 await websocket.send_json({"error": f"Inference failed: {exc}"})
