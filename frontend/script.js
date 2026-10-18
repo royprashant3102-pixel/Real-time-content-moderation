@@ -48,7 +48,6 @@
     var verdictDetailSingle = document.getElementById('verdict-detail-single');
     var valSafeSingle = document.getElementById('val-safe-single');
     var valToxicSingle = document.getElementById('val-toxic-single');
-    var latencySingle = document.getElementById('latency-single');
 
     // Bulk result elements
     var resultCardBulk = document.getElementById('result-card-bulk');
@@ -494,10 +493,6 @@
 
         valSafeSingle.textContent = (data.confidence['non-toxic'] * 100).toFixed(1) + '%';
         valToxicSingle.textContent = (toxicScore * 100).toFixed(1) + '%';
-
-        latencySingle.innerHTML =
-            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ' +
-            latencyMs + 'ms round-trip';
 
         resultsSingle.classList.add('is-visible');
     }
