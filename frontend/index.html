@@ -460,66 +460,7 @@
             </div>
         </section>
 
-        <section class="pipeline">
-            <div class="pipeline-header">
-                <h2>How it works</h2>
-                <p class="pipeline-sub">Three steps, one model, sub-50ms per chunk.</p>
-            </div>
-            <div class="pipeline-steps">
-                <div class="step-card">
-                    <div class="step-icon-wrap">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                    </div>
-                    <div class="step-content">
-                        <span class="step-num">01</span>
-                        <h3>Tokenize</h3>
-                        <p>Text splits into subword tokens via the DistilBERT tokenizer. Large content is chunked into overlapping segments.</p>
-                    </div>
-                </div>
-                <div class="step-connector"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 18 15 12 9 6"/></svg></div>
-                <div class="step-card">
-                    <div class="step-icon-wrap">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                    </div>
-                    <div class="step-content">
-                        <span class="step-num">02</span>
-                        <h3>Classify</h3>
-                        <p>Each chunk flows through a 6-layer transformer, fine-tuned on Civil Comments, exported to ONNX, quantized to INT8.</p>
-                    </div>
-                </div>
-                <div class="step-connector"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="9 18 15 12 9 6"/></svg></div>
-                <div class="step-card">
-                    <div class="step-icon-wrap">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    </div>
-                    <div class="step-content">
-                        <span class="step-num">03</span>
-                        <h3>Score</h3>
-                        <p>Softmax normalizes logits into probabilities per chunk. The worst chunk determines the overall verdict.</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section class="stats">
-            <div class="stat"><span class="stat-value">95.3%</span><span class="stat-label">Accuracy</span></div>
-            <div class="stat-divider"></div>
-            <div class="stat"><span class="stat-value">&lt;13ms</span><span class="stat-label">Avg latency</span></div>
-            <div class="stat-divider"></div>
-            <div class="stat"><span class="stat-value">64MB</span><span class="stat-label">Model size</span></div>
-            <div class="stat-divider"></div>
-            <div class="stat"><span class="stat-value">74.9%</span><span class="stat-label">Size reduction</span></div>
-        </section>
     </main>
-
-    <footer class="footer">
-        <div class="footer-inner">
-            <p class="footer-left">Built by <strong>Prashant Roy</strong> — a portfolio project, not a product.</p>
-            <p class="footer-right">
-                <code>distilbert-base-uncased</code> · <code>google/civil_comments</code> · ONNX Runtime
-            </p>
-        </div>
-    </footer>
 
     <script src="/static/script.js"></script>
 </body>
