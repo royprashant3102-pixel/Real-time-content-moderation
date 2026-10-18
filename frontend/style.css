@@ -215,6 +215,30 @@ main {
 .tab svg { opacity: 0.6; }
 .tab.is-active svg { opacity: 1; }
 
+.tab.is-disabled {
+    cursor: not-allowed;
+    color: var(--ink-faint);
+    opacity: 0.55;
+}
+.tab.is-disabled:hover { background: transparent; color: var(--ink-faint); }
+.tab.is-disabled svg { opacity: 0.4; }
+
+.tab-badge {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 0.1rem 0.3rem;
+    margin-left: 0.2rem;
+}
+
+@media (max-width: 700px) {
+    .tab-badge { display: none; }
+}
+
 
 /* ── Tab panels ────────────────────────────────────────────────────────────── */
 

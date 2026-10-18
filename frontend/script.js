@@ -131,6 +131,8 @@
 
     tabs.forEach(function (tab) {
         tab.addEventListener('click', function () {
+            if (tab.classList.contains('is-disabled')) return;
+
             var target = tab.getAttribute('data-tab');
 
             tabs.forEach(function (t) {
