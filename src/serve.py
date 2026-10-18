@@ -706,6 +706,15 @@ async def predict_compare(request: PredictionRequest):
             custom_model=ModelPredictionResult(**custom_res),
             base_model=ModelPredictionResult(**base_res),
         )
+    except ModuleNotFoundError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Model comparison is unavailable in this deployment: it requires PyTorch, "
+                "which is intentionally excluded from the slim deploy image to keep memory "
+                f"usage low ({e})."
+            ),
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Comparison prediction failed: {str(e)}")
 
