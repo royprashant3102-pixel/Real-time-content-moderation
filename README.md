@@ -2,7 +2,10 @@
 
 A production-grade, multilingual text classification microservice for detecting toxic and policy-violating content in **English, Hindi (Devanagari), and Hinglish (Romanized Hindi)**.
 
-Fine-tuned from **Multilingual DistilBERT** (`distilbert-base-multilingual-cased`) and optimized for low-latency (**<15 ms**) CPU inference using **ONNX Runtime + dynamic INT8 quantization**, served via **FastAPI** with REST and WebSocket streaming endpoints.
+Fine-tuned from **Multilingual DistilBERT** (`distilbert-base-multilingual-cased`) and optimized for low-latency CPU inference using **ONNX Runtime + dynamic INT8 quantization**, served via **FastAPI** with REST and WebSocket streaming endpoints.
+
+**Live demo:** [real-time-content-moderation-1.onrender.com](https://real-time-content-moderation-1.onrender.com)
+*(hosted on Render's free tier — File Upload and URL Analysis are disabled on this deployment due to the 512MB RAM limit; both work locally. The free instance also sleeps after 15 min idle, so the first load may take 30-60s to wake up.)*
 
 ---
 
@@ -44,11 +47,11 @@ Model Confidence   Rule Flagging (Explicit profanity pattern)
 ## Features
 
 - **Multilingual Moderation**: Detects toxicity across English, pure Hindi (Devanagari: e.g. *भड़वा, चूतिया*), and code-switched Hinglish (e.g. *bhenchod, oye chutiye, hello randi*).
-- **Sub-15ms Latency**: Dynamic INT8 quantization delivers **12.8 ms** average latency per sample on CPU.
-- **74.9% Compression**: Model footprint reduced from **255.5 MB** to **64.2 MB** with negligible accuracy impact.
-- **SSRF-Protected URL Analysis**: Securely extracts and classifies remote web content while filtering loopback, RFC 1918 private ranges, and cloud metadata endpoints.
-- **Multi-Format Document Ingestion**: Supports `.txt`, `.pdf`, `.docx`, `.csv`, `.md`, and `.json` with automatic chunking.
-- **Real-Time Live Typing**: Full-duplex WebSocket stream (`/ws/predict`) with sub-5ms feedback for live typing experiences.
+- **Low-Latency CPU Inference**: Dynamic INT8 quantization keeps single-request round-trip latency in the low single-digit milliseconds on CPU.
+- **~75% Compression**: Model footprint reduced from **516 MB** (PyTorch FP32) to **129 MB** (ONNX INT8) with a modest, documented accuracy tradeoff (see Performance section).
+- **SSRF-Protected URL Analysis**: Securely extracts and classifies remote web content while filtering loopback, RFC 1918 private ranges, and cloud metadata endpoints. *(Disabled on the free-tier live demo — see note above; fully functional locally.)*
+- **Multi-Format Document Ingestion**: Supports `.txt`, `.pdf`, `.docx`, `.csv`, `.md`, and `.json` with automatic chunking. *(Disabled on the free-tier live demo — see note above; fully functional locally.)*
+- **Real-Time Live Typing**: Full-duplex WebSocket stream (`/ws/predict`) with live per-keystroke feedback, debounced client-side and staleness-checked against out-of-order responses.
 - **Calibrated ML + Rule Metadata**: Transparent moderation logic where machine learning probabilities are preserved, while keyword hits are surfaced independently as `rule_flagged` and `rule_matches`.
 
 ---
@@ -126,11 +129,11 @@ curl -X POST http://localhost:8000/predict \
 ```json
 {
   "label": "toxic",
-  "score": 0.9854,
+  "score": 0.9975,
   "toxic": true,
   "confidence": {
-    "non-toxic": 0.0146,
-    "toxic": 0.9854
+    "non-toxic": 0.0025,
+    "toxic": 0.9975
   },
   "rule_flagged": true,
   "rule_matches": ["chutiya"]
@@ -158,26 +161,20 @@ Connect to `ws://localhost:8000/ws/predict` and stream text payloads:
 
 | Metric | PyTorch (FP32) | Quantized ONNX (INT8) | Delta |
 |--------|----------------|-----------------------|-------|
-| **Accuracy** | 95.05% | 94.92% | -0.13% |
-| **Precision** | 89.28% | 88.94% | -0.34% |
-| **Recall** | 84.21% | 84.10% | -0.11% |
-| **F1 Score** | 0.8667 | 0.8645 | -0.0022 |
+| **Accuracy** | 92.08% | 88.65% | -3.43% |
+| **Precision** | 82.94% | 78.91% | -4.03% |
+| **Recall** | 94.81% | 88.16% | -6.65% |
+| **F1 Score** | 0.8848 | 0.8328 | -0.0520 |
+| **PR-AUC** | 0.9487 | 0.8585 | -0.0902 |
 
-### Latency Benchmark (Apple Silicon CPU, Batch Size = 1)
-
-| Model | Mean | Median | P95 |
-|-------|------|--------|-----|
-| PyTorch (FP32) | 17.14 ms | 16.67 ms | 20.16 ms |
-| **ONNX Quantized (INT8)** | **12.81 ms** | **12.55 ms** | **14.36 ms** |
-| **Speedup** | **1.34×** | | |
+Quantization trades a few points of accuracy for a ~75% smaller, faster-loading model — a deliberate tradeoff for deployment on memory-constrained hosts. Run `python src/evaluate.py` to reproduce against your own retrain.
 
 ### Model Footprint
 
 | Artifact | Size | Compression |
 |----------|------|-------------|
-| PyTorch Checkpoint | 541 MB | Baseline |
-| `model.onnx` (FP32) | 255.5 MB | 52.8% reduction |
-| `model_quantized.onnx` (INT8) | **64.2 MB** | **74.9% reduction** |
+| PyTorch Checkpoint | 516 MB | Baseline |
+| `model_quantized.onnx` (INT8) | **129 MB** | **~75% reduction** |
 
 ---
 
